@@ -11,12 +11,17 @@ pub fn main() !void {
 
     const allocator = if (use_gpa) gpa.allocator() else std.heap.c_allocator;
 
+    var env_map = try std.process.getEnvMap(allocator);
+    defer env_map.deinit();
+
+    const token = env_map.get("ZEPPELIN_TOKEN") orelse @panic("Missing environment variable ZEPPELIN_TOKEN");
+
     var client: zeppelin.Client = try .init(.{
         .allocator = allocator,
     });
     defer client.deinit();
 
-    try client.connectAndLogin("");
+    try client.connectAndLogin(token);
 
     while (true) {}
 }

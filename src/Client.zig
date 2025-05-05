@@ -26,7 +26,5 @@ pub fn deinit(self: *Client) void {
 
 pub fn connectAndLogin(self: *Client, token: []const u8) !void {
     self.maybe_gateway_client = @as(GatewayClient, undefined);
-    try self.maybe_gateway_client.?.init(self.allocator);
-
-    _ = token;
+    try self.maybe_gateway_client.?.init(token, self.allocator);
 }
