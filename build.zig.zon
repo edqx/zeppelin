@@ -1,0 +1,16 @@
+.{
+    .name = .zeppelin,
+    .fingerprint = 0x20cc75b91bb23678,
+    .version = "1.0.0",
+    .dependencies = .{
+        .websocket = .{
+            .url = "git+https://github.com/karlseguin/websocket.zig#c1c53b062eab871b95b70409daadfd6ac3d6df61",
+            .hash = "websocket-0.1.0-ZPISdYBIAwB1yO6AFDHRHLaZSmpdh4Bz4dCmaQUqNNWh",
+        },
+    },
+    .paths = .{
+        "src",
+        "build.zig",
+        "build.zig.zon",
+    },
+}
