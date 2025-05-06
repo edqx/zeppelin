@@ -41,6 +41,7 @@ pub fn main() !void {
     _ = &handler;
 
     var event_pool: zeppelin.EventPool(Handler) = .{
+        .client = &client,
         .allocator = allocator,
         .handler = &handler,
     };

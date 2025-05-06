@@ -85,7 +85,6 @@ pub const Client = struct {
     token_ephemeral: ?[]const u8,
     options: Options,
 
-    read_thread: std.Thread,
     heartbeat_thread: ?std.Thread,
 
     heartbeat_interval: ?usize,
@@ -99,7 +98,6 @@ pub const Client = struct {
             .token_ephemeral = token_ephemeral,
             .options = options,
 
-            .read_thread = undefined,
             .heartbeat_thread = undefined,
 
             .heartbeat_interval = std.time.ms_per_s * 40,
@@ -116,44 +114,70 @@ pub const Client = struct {
             .timeout_ms = 5000,
             .headers = "Host: gateway.discord.gg",
         });
-
-        self.read_thread = try self.websocket_client.readLoopInNewThread(self);
     }
 
     pub fn deinit(self: *Client) void {
         self.websocket_client.deinit();
     }
 
-    pub fn serverMessage(self: *Client, data: []u8) !void {
-        log.info("Got {} bytes from Discord gateway: '''{s}'''", .{ data.len, data });
+    pub fn connectAndAuthenticate(self: *Client) !void {
+        try self.websocket_client.readTimeout(0);
 
-        var arena: std.heap.ArenaAllocator = .init(self.allocator);
-        defer arena.deinit();
+        while (true) {
+            var arena: std.heap.ArenaAllocator = .init(self.allocator);
+            defer arena.deinit();
 
-        const allocator = arena.allocator();
+            const allocator = arena.allocator();
 
-        const event = try std.json.parseFromSliceLeaky(gateway_messages.event.Receive, allocator, data, .{
+            const opcode, const event = try self.readEvent(allocator);
+
+            switch (opcode) {
+                .dispatch, .heartbeat, .reconnect, .invalid_session, .heartbeat_acknowledge => return error.UnexpectedEvent,
+                .hello => {
+                    const hello_payload = try std.json.parseFromValueLeaky(gateway_messages.payload.Hello, allocator, event.d orelse .null, .{
+                        .ignore_unknown_fields = true,
+                    });
+                    try self.handleHello(allocator, hello_payload);
+                    break;
+                },
+            }
+        }
+    }
+
+    fn readMessage(self: *Client) ![]const u8 {
+        var reader = &self.websocket_client._reader;
+
+        while (true) {
+            const message = try self.websocket_client.read() orelse unreachable;
+
+            const message_type = message.type;
+            defer reader.done(message_type);
+
+            switch (message_type) {
+                .text, .binary => return message.data,
+                .ping => {
+                    try self.websocket_client.writeFrame(.pong, @constCast(message.data));
+                },
+                .close => {
+                    self.websocket_client.close(.{}) catch unreachable;
+                },
+                .pong => {},
+            }
+        }
+    }
+
+    pub fn readEvent(self: *Client, arena: std.mem.Allocator) !struct { gateway_messages.opcode.Receive, gateway_messages.event.Receive } {
+        const message_data = try self.readMessage();
+
+        const event = try std.json.parseFromSliceLeaky(gateway_messages.event.Receive, arena, message_data, .{
             .ignore_unknown_fields = true,
         });
 
         const opcode = std.meta.intToEnum(gateway_messages.opcode.Receive, event.op) catch {
-            log.err("Received unknown opcode from Gateway: {}", .{event.op});
-            return;
+            return error.UnknownOpcode;
         };
 
-        switch (opcode) {
-            .dispatch => {},
-            .heartbeat => {},
-            .invalid_session => {},
-            .reconnect => {},
-            .hello => {
-                const hello_payload = try std.json.parseFromValueLeaky(gateway_messages.payload.Hello, allocator, event.d orelse .null, .{
-                    .ignore_unknown_fields = true,
-                });
-                try self.handleHello(allocator, hello_payload);
-            },
-            .heartbeat_acknowledge => {},
-        }
+        return .{ opcode, event };
     }
 
     fn handleHello(self: *Client, arena: std.mem.Allocator, hello_payload: gateway_messages.payload.Hello) !void {
