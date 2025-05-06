@@ -19,7 +19,7 @@ pub const opcode = struct {
         request_guild_members = 8,
         request_soundboard_sounds = 31,
 
-        pub fn Payload(comptime self: Send) type {
+        pub fn Payload(comptime self: opcode.Send) type {
             return switch (self) {
                 .identify => payload.Identify,
                 else => @compileError("Unsupported payload type for send opcode " ++ @tagName(self)),
@@ -66,23 +66,21 @@ pub const opcode = struct {
     };
 };
 
-pub const event = struct {
-    pub const Receive = struct {
-        op: i32,
-        d: ?std.json.Value,
-        s: ?i32,
-        t: ?[]const u8,
-    };
-
-    pub fn Send(comptime Payload: type) type {
-        return struct {
-            op: i32,
-            d: Payload,
-            s: ?i32 = null,
-            t: ?[]const u8 = null,
-        };
-    }
+pub const Receive = struct {
+    op: i32,
+    d: ?std.json.Value,
+    s: ?i32,
+    t: ?[]const u8,
 };
+
+pub fn Send(comptime Payload: type) type {
+    return struct {
+        op: i32,
+        d: Payload,
+        s: ?i32 = null,
+        t: ?[]const u8 = null,
+    };
+}
 
 pub const payload = struct {
     pub const Hello = struct {

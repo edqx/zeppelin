@@ -8,6 +8,24 @@ pub const InitOptions = struct {
     allocator: std.mem.Allocator,
 };
 
+pub const Event = union(enum) {
+    pub const DispatchType = enum {
+        ready,
+        message_create,
+    };
+
+    pub const Ready = struct {};
+    pub const MessageCreate = struct {};
+
+    ready: Ready,
+    message_create: MessageCreate,
+};
+
+pub const dispatch_event_map: std.StaticStringMap(Event.DispatchType) = .initComptime(.{
+    .{ "READY", .ready },
+    .{ "MESSAGE_CREATE", .message_create },
+});
+
 allocator: std.mem.Allocator,
 maybe_gateway_client: ?gateway.Client,
 
@@ -43,9 +61,7 @@ pub fn connectAndLogin(self: *Client, token: []const u8, options: gateway.Option
     try self.maybe_gateway_client.?.connectAndAuthenticate();
 }
 
-pub fn receiveAndDispatch(self: *Client, handler: anytype) !void {
-    _ = handler;
-
+pub fn receive(self: *Client) !Event {
     const gateway_client: *gateway.Client = &(self.maybe_gateway_client orelse return error.NotConnected);
 
     while (true) {
@@ -55,29 +71,24 @@ pub fn receiveAndDispatch(self: *Client, handler: anytype) !void {
         const allocator = arena.allocator();
 
         switch (try gateway_client.readMessage(allocator)) {
-            .event => |event| {
-                switch (event.opcode) {
-                    .dispatch => {
-                        // todo: handle
-                        std.log.info("Got dispatch {}", .{event});
-                        break;
+            .dispatch_event => |dispatch_event| {
+                const dispatch_event_type = dispatch_event_map.get(dispatch_event.name) orelse continue;
+
+                switch (dispatch_event_type) {
+                    .ready => {
+                        return .{
+                            .ready = .{},
+                        };
                     },
-                    .heartbeat => {
-                        // todo: handle
-                    },
-                    .reconnect => {
-                        // todo: handle
-                    },
-                    .invalid_session => {
-                        // todo: handle
-                    },
-                    .hello => {
-                        // todo: error
-                    },
-                    .heartbeat_acknowledge => {
-                        // todo: dunno yet
+                    .message_create => {
+                        return .{
+                            .message_create = .{},
+                        };
                     },
                 }
+            },
+            .hello, .invalid_session, .reconnect => {
+                // TODO: handle
             },
             .close => |close_opcode| {
                 switch (close_opcode) {
@@ -101,5 +112,14 @@ pub fn receiveAndDispatch(self: *Client, handler: anytype) !void {
                 }
             },
         }
+    }
+}
+
+pub fn receiveAndDispatch(self: *Client, handler: anytype) !void {
+    const event = try self.receive();
+
+    switch (event) {
+        .ready => |ev| if (@hasDecl(@TypeOf(handler.*), "ready")) try handler.ready(ev),
+        .message_create => |ev| if (@hasDecl(@TypeOf(handler.*), "messageCreate")) try handler.messageCreate(ev),
     }
 }

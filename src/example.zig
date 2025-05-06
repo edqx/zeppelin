@@ -8,9 +8,11 @@ const use_gpa = builtin.mode == .Debug or builtin.mode == .ReleaseSafe;
 const Handler = struct {
     client: *zeppelin.Client,
 
-    pub fn ready(self: *Handler, ready_event: zeppelin.event.Ready) !void {
+    pub fn ready(self: *Handler, ready_event: zeppelin.Event.Ready) !void {
         _ = self;
         _ = ready_event;
+
+        std.log.info("Bot ready!", .{});
     }
 };
 
@@ -32,8 +34,6 @@ pub fn main() !void {
     try client.connectAndLogin(token, .{
         .intents = .all,
     });
-
-    try client.disconnect();
 
     var handler: Handler = .{ .client = &client };
     _ = &handler;

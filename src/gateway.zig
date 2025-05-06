@@ -2,7 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const websocket = @import("websocket");
 
-const gateway_messages = @import("gateway_messages.zig");
+const gateway_message = @import("gateway_message.zig");
 
 const log = std.log.scoped(.zeppelin_gateway);
 
@@ -75,13 +75,20 @@ pub const Intent = packed struct(IntentInt) {
 };
 
 pub const MessageRead = union(enum) {
-    pub const Event = struct {
-        opcode: gateway_messages.opcode.Receive,
-        maybe_data_json: ?std.json.Value,
+    pub const DispatchEvent = struct {
+        name: []const u8,
+        data_json: std.json.Value,
     };
 
-    event: Event,
-    close: gateway_messages.opcode.Close,
+    pub const Hello = struct {
+        heartbeat_interval: usize,
+    };
+
+    dispatch_event: DispatchEvent,
+    reconnect: void,
+    invalid_session: void,
+    hello: Hello,
+    close: gateway_message.opcode.Close,
 };
 
 pub const Options = struct {
@@ -156,22 +163,17 @@ pub const Client = struct {
             const allocator = arena.allocator();
 
             switch (try self.readMessage(allocator)) {
-                .event => |event| {
-                    switch (event.opcode) {
-                        .dispatch, .heartbeat, .reconnect, .invalid_session, .heartbeat_acknowledge => return error.UnexpectedEvent,
-                        .hello => {
-                            const hello_payload = try std.json.parseFromValueLeaky(
-                                gateway_messages.payload.Hello,
-                                allocator,
-                                event.maybe_data_json orelse .null,
-                                .{
-                                    .ignore_unknown_fields = true,
-                                },
-                            );
-                            try self.handleHello(allocator, hello_payload);
-                            break;
-                        },
-                    }
+                .dispatch_event,
+                .reconnect,
+                .invalid_session,
+                => {},
+                .hello => |hello_details| {
+                    self.heartbeat_interval = hello_details.heartbeat_interval;
+                    self.heartbeat_thread = try std.Thread.spawn(.{}, heartbeatInterval, .{self});
+                    self.state = .received_hello;
+
+                    try self.sendIdentify(allocator);
+                    break;
                 },
                 .close => return error.UnexpectedClose,
             }
@@ -187,20 +189,48 @@ pub const Client = struct {
 
             switch (message.type) {
                 .text, .binary => {
-                    const event = try std.json.parseFromSliceLeaky(gateway_messages.event.Receive, arena, message.data, .{
+                    const event = try std.json.parseFromSliceLeaky(gateway_message.Receive, arena, message.data, .{
+                        .allocate = .alloc_always,
                         .ignore_unknown_fields = true,
                     });
 
-                    const opcode = std.meta.intToEnum(gateway_messages.opcode.Receive, event.op) catch {
+                    const opcode = std.meta.intToEnum(gateway_message.opcode.Receive, event.op) catch {
                         return error.UnknownOpcode;
                     };
 
-                    return .{
-                        .event = .{
-                            .opcode = opcode,
-                            .maybe_data_json = event.d,
+                    switch (opcode) {
+                        .dispatch => {
+                            return .{ .dispatch_event = .{
+                                .name = event.t.?,
+                                .data_json = event.d.?,
+                            } };
                         },
-                    };
+                        .heartbeat => {
+                            // TODO: handle
+                        },
+                        .reconnect => {
+                            return .reconnect;
+                        },
+                        .invalid_session => {
+                            return .invalid_session;
+                        },
+                        .hello => {
+                            const hello_payload = try std.json.parseFromValueLeaky(
+                                gateway_message.payload.Hello,
+                                arena,
+                                event.d orelse .null,
+                                .{
+                                    .ignore_unknown_fields = true,
+                                },
+                            );
+                            return .{ .hello = .{
+                                .heartbeat_interval = @intCast(hello_payload.heartbeat_interval),
+                            } };
+                        },
+                        .heartbeat_acknowledge => {
+                            // TODO: dunno yet
+                        },
+                    }
                 },
                 .ping => {
                     try self.websocket_client.writeFrame(.pong, @constCast(message.data));
@@ -209,7 +239,7 @@ pub const Client = struct {
                     if (message.data.len > 1) blk: {
                         const close_opcode_int = std.mem.readInt(u16, message.data[0..2], .big);
 
-                        const close_opcode: gateway_messages.opcode.Close = std.meta.intToEnum(gateway_messages.opcode.Close, close_opcode_int) catch break :blk;
+                        const close_opcode: gateway_message.opcode.Close = std.meta.intToEnum(gateway_message.opcode.Close, close_opcode_int) catch break :blk;
 
                         return .{ .close = close_opcode };
                     }
@@ -221,25 +251,13 @@ pub const Client = struct {
         }
     }
 
-    fn handleHello(self: *Client, arena: std.mem.Allocator, hello_payload: gateway_messages.payload.Hello) !void {
-        if (hello_payload.heartbeat_interval < 0) {
-            log.err("Hello payload had invalid heartbeat interval: {}", .{hello_payload.heartbeat_interval});
-            return;
-        }
-        self.heartbeat_interval = @intCast(hello_payload.heartbeat_interval);
-        self.heartbeat_thread = try std.Thread.spawn(.{}, heartbeatInterval, .{self});
-        self.state = .received_hello;
-
-        try self.sendIdentify(arena);
-    }
-
     fn sendEvent(
         self: *Client,
         allocator: std.mem.Allocator,
-        comptime opcode: gateway_messages.opcode.Send,
+        comptime opcode: gateway_message.opcode.Send,
         payload: opcode.Payload(),
     ) !void {
-        const send_event: gateway_messages.event.Send(opcode.Payload()) = .{
+        const send_event: gateway_message.Send(opcode.Payload()) = .{
             .op = @intFromEnum(opcode),
             .d = payload,
         };
