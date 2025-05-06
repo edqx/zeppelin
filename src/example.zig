@@ -5,6 +5,15 @@ const zeppelin = @import("zeppelin");
 
 const use_gpa = builtin.mode == .Debug or builtin.mode == .ReleaseSafe;
 
+const Handler = struct {
+    client: *zeppelin.Client,
+
+    pub fn ready(self: *Handler, ready_event: zeppelin.event.Ready) !void {
+        _ = self;
+        _ = ready_event;
+    }
+};
+
 pub fn main() !void {
     var gpa = if (use_gpa) std.heap.GeneralPurposeAllocator(.{}){} else {};
     defer if (use_gpa) std.debug.assert(gpa.deinit() == .ok);
@@ -21,7 +30,21 @@ pub fn main() !void {
     });
     defer client.deinit();
 
-    try client.connectAndLogin(token);
+    try client.connectAndLogin(token, .{
+        .intents = .{
+            .guild_messages = true,
+            .message_content = true,
+        },
+    });
 
-    while (true) {}
+    var handler: Handler = .{ .client = &client };
+    _ = &handler;
+
+    var event_pool: zeppelin.EventPool(Handler) = .{
+        .allocator = allocator,
+        .handler = &handler,
+    };
+    defer event_pool.deinit();
+
+    try event_pool.start();
 }
