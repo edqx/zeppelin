@@ -24,16 +24,29 @@ pub fn deinit(self: *Client) void {
     }
 }
 
+pub fn connected(self: *Client) bool {
+    return self.maybe_gateway_client != null;
+}
+
+pub fn disconnect(self: *Client) !void {
+    var gateway_client: *gateway.Client = &(self.maybe_gateway_client orelse return error.NotConnected);
+
+    try gateway_client.disconnect();
+    gateway_client.deinit();
+    self.maybe_gateway_client = null;
+}
+
 pub fn connectAndLogin(self: *Client, token: []const u8, options: gateway.Options) !void {
-    self.maybe_gateway_client = @as(gateway.Client, undefined);
-    try self.maybe_gateway_client.?.init(self.allocator, token, options);
+    if (self.maybe_gateway_client != null) return error.Connected;
+
+    self.maybe_gateway_client = try gateway.Client.init(self.allocator, token, options);
     try self.maybe_gateway_client.?.connectAndAuthenticate();
 }
 
 pub fn receiveAndDispatch(self: *Client, handler: anytype) !void {
     _ = handler;
 
-    const gateway_client: *gateway.Client = if (self.maybe_gateway_client) |*c| c else return error.NotConnected;
+    const gateway_client: *gateway.Client = &(self.maybe_gateway_client orelse return error.NotConnected);
 
     while (true) {
         var arena: std.heap.ArenaAllocator = .init(self.allocator);

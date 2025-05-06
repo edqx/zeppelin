@@ -33,6 +33,8 @@ pub fn main() !void {
         .intents = .all,
     });
 
+    try client.disconnect();
+
     var handler: Handler = .{ .client = &client };
     _ = &handler;
 

@@ -16,6 +16,8 @@ pub fn EventPool(comptime Handler: type) type {
 
         pub fn start(self: EventPoolT) !void {
             while (true) {
+                if (!self.client.connected()) break;
+
                 try self.client.receiveAndDispatch(self.handler);
             }
         }

@@ -95,39 +95,55 @@ pub const Client = struct {
     token_ephemeral: ?[]const u8,
     options: Options,
 
+    heartbeat_reset: std.Thread.ResetEvent,
     heartbeat_thread: ?std.Thread,
 
     heartbeat_interval: ?usize,
     state: State,
 
-    pub fn init(self: *Client, allocator: std.mem.Allocator, token_ephemeral: []const u8, options: Options) !void {
-        self.* = .{
-            .allocator = allocator,
-            .websocket_client = undefined,
-
-            .token_ephemeral = token_ephemeral,
-            .options = options,
-
-            .heartbeat_thread = undefined,
-
-            .heartbeat_interval = std.time.ms_per_s * 40,
-            .state = .established,
-        };
-
-        self.websocket_client = try websocket.Client.init(allocator, .{
+    pub fn init(allocator: std.mem.Allocator, token_ephemeral: []const u8, options: Options) !Client {
+        var websocket_client = try websocket.Client.init(allocator, .{
             .host = "gateway.discord.gg",
             .port = 443,
             .tls = true,
         });
 
-        try self.websocket_client.handshake("/?v=10&encoding=json", .{
+        try websocket_client.handshake("/?v=10&encoding=json", .{
             .timeout_ms = 5000,
             .headers = "Host: gateway.discord.gg",
         });
+
+        return .{
+            .allocator = allocator,
+            .websocket_client = websocket_client,
+
+            .token_ephemeral = token_ephemeral,
+            .options = options,
+
+            .heartbeat_reset = .{},
+            .heartbeat_thread = null,
+
+            .heartbeat_interval = std.time.ms_per_s * 40,
+            .state = .established,
+        };
     }
 
     pub fn deinit(self: *Client) void {
+        self.stopHeartbeat();
         self.websocket_client.deinit();
+    }
+
+    pub fn disconnect(self: *Client) !void {
+        self.stopHeartbeat();
+        try self.websocket_client.close(.{});
+    }
+
+    pub fn stopHeartbeat(self: *Client) void {
+        if (self.heartbeat_thread) |thread| {
+            self.heartbeat_reset.set();
+            thread.join();
+            self.heartbeat_thread = null;
+        }
     }
 
     pub fn connectAndAuthenticate(self: *Client) !void {
@@ -231,8 +247,6 @@ pub const Client = struct {
         const data = try std.json.stringifyAlloc(allocator, send_event, .{});
         defer allocator.free(data);
 
-        log.info("identify: {s}", .{data});
-
         try self.websocket_client.write(data);
     }
 
@@ -256,8 +270,14 @@ pub const Client = struct {
 
     fn heartbeatInterval(self: *Client) !void {
         while (true) {
-            std.Thread.sleep(@intCast(std.time.ns_per_ms * self.heartbeat_interval.?));
-            if (!self.state.alive()) continue;
+            if (self.heartbeat_reset.timedWait(@intCast(std.time.ns_per_ms * self.heartbeat_interval.?))) {
+                break; // no more heartbeats, gateway disconnected
+            } else |e| {
+                switch (e) {
+                    error.Timeout => if (!self.state.alive()) continue,
+                    else => return e,
+                }
+            }
         }
     }
 };
