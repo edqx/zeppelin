@@ -41,28 +41,51 @@ pub fn receiveAndDispatch(self: *Client, handler: anytype) !void {
 
         const allocator = arena.allocator();
 
-        const opcode, const event = try gateway_client.readEvent(allocator);
-
-        switch (opcode) {
-            .dispatch => {
-                // todo: handle
-                std.log.info("Got dispatch {}", .{event});
-                break;
+        switch (try gateway_client.readMessage(allocator)) {
+            .event => |event| {
+                switch (event.opcode) {
+                    .dispatch => {
+                        // todo: handle
+                        std.log.info("Got dispatch {}", .{event});
+                        break;
+                    },
+                    .heartbeat => {
+                        // todo: handle
+                    },
+                    .reconnect => {
+                        // todo: handle
+                    },
+                    .invalid_session => {
+                        // todo: handle
+                    },
+                    .hello => {
+                        // todo: error
+                    },
+                    .heartbeat_acknowledge => {
+                        // todo: dunno yet
+                    },
+                }
             },
-            .heartbeat => {
-                // todo: handle
-            },
-            .reconnect => {
-                // todo: handle
-            },
-            .invalid_session => {
-                // todo: handle
-            },
-            .hello => {
-                // todo: error
-            },
-            .heartbeat_acknowledge => {
-                // todo: dunno yet
+            .close => |close_opcode| {
+                switch (close_opcode) {
+                    .rate_limited => return error.RateLimited,
+                    .session_timed_out => return error.TimedOut,
+                    .not_authenticated,
+                    .authentication_failed,
+                    .already_authenticated,
+                    => return error.AuthenticationFailed,
+                    .invalid_intents,
+                    .disallowed_intents,
+                    => return error.BadIntents,
+                    .unknown_error,
+                    .unknown_opcode,
+                    .decode_error,
+                    .invalid_sequence,
+                    .invalid_shard,
+                    .sharding_required,
+                    .invalid_api_version,
+                    => return error.UnexpectedClose,
+                }
             },
         }
     }

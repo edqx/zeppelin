@@ -41,8 +41,8 @@ pub const Intent = packed struct(IntentInt) {
     direct_message_typing: bool = false,
     message_content: bool = false,
     guild_scheduled_events: bool = false,
-    auto_moderation_configuration: bool = false,
     _padding1: enum(u3) { unset } = .unset,
+    auto_moderation_configuration: bool = false,
     auto_moderation_execution: bool = false,
     _padding2: enum(u2) { unset } = .unset,
     guild_message_polls: bool = false,
@@ -51,14 +51,14 @@ pub const Intent = packed struct(IntentInt) {
 
     pub const all: Intent = .{
         .guilds = true,
-        .guild_members = true,
+        .guild_members = false,
         .guild_moderation = true,
         .guild_expressions = true,
         .guild_integrations = true,
         .guild_webhooks = true,
         .guild_invites = true,
         .guild_voice_states = true,
-        .guild_presences = true,
+        .guild_presences = false,
         .guild_messages = true,
         .guild_message_reactions = true,
         .guild_message_typing = true,
@@ -72,6 +72,16 @@ pub const Intent = packed struct(IntentInt) {
         .guild_message_polls = true,
         .direct_message_polls = true,
     };
+};
+
+pub const MessageRead = union(enum) {
+    pub const Event = struct {
+        opcode: gateway_messages.opcode.Receive,
+        maybe_data_json: ?std.json.Value,
+    };
+
+    event: Event,
+    close: gateway_messages.opcode.Close,
 };
 
 pub const Options = struct {
@@ -129,55 +139,70 @@ pub const Client = struct {
 
             const allocator = arena.allocator();
 
-            const opcode, const event = try self.readEvent(allocator);
-
-            switch (opcode) {
-                .dispatch, .heartbeat, .reconnect, .invalid_session, .heartbeat_acknowledge => return error.UnexpectedEvent,
-                .hello => {
-                    const hello_payload = try std.json.parseFromValueLeaky(gateway_messages.payload.Hello, allocator, event.d orelse .null, .{
-                        .ignore_unknown_fields = true,
-                    });
-                    try self.handleHello(allocator, hello_payload);
-                    break;
+            switch (try self.readMessage(allocator)) {
+                .event => |event| {
+                    switch (event.opcode) {
+                        .dispatch, .heartbeat, .reconnect, .invalid_session, .heartbeat_acknowledge => return error.UnexpectedEvent,
+                        .hello => {
+                            const hello_payload = try std.json.parseFromValueLeaky(
+                                gateway_messages.payload.Hello,
+                                allocator,
+                                event.maybe_data_json orelse .null,
+                                .{
+                                    .ignore_unknown_fields = true,
+                                },
+                            );
+                            try self.handleHello(allocator, hello_payload);
+                            break;
+                        },
+                    }
                 },
+                .close => return error.UnexpectedClose,
             }
         }
     }
 
-    fn readMessage(self: *Client) ![]const u8 {
+    pub fn readMessage(self: *Client, arena: std.mem.Allocator) !MessageRead {
         var reader = &self.websocket_client._reader;
 
         while (true) {
             const message = try self.websocket_client.read() orelse unreachable;
+            defer reader.done(message.type);
 
-            const message_type = message.type;
-            defer reader.done(message_type);
+            switch (message.type) {
+                .text, .binary => {
+                    const event = try std.json.parseFromSliceLeaky(gateway_messages.event.Receive, arena, message.data, .{
+                        .ignore_unknown_fields = true,
+                    });
 
-            switch (message_type) {
-                .text, .binary => return message.data,
+                    const opcode = std.meta.intToEnum(gateway_messages.opcode.Receive, event.op) catch {
+                        return error.UnknownOpcode;
+                    };
+
+                    return .{
+                        .event = .{
+                            .opcode = opcode,
+                            .maybe_data_json = event.d,
+                        },
+                    };
+                },
                 .ping => {
                     try self.websocket_client.writeFrame(.pong, @constCast(message.data));
                 },
                 .close => {
+                    if (message.data.len > 1) blk: {
+                        const close_opcode_int = std.mem.readInt(u16, message.data[0..2], .big);
+
+                        const close_opcode: gateway_messages.opcode.Close = std.meta.intToEnum(gateway_messages.opcode.Close, close_opcode_int) catch break :blk;
+
+                        return .{ .close = close_opcode };
+                    }
+
                     self.websocket_client.close(.{}) catch unreachable;
                 },
                 .pong => {},
             }
         }
-    }
-
-    pub fn readEvent(self: *Client, arena: std.mem.Allocator) !struct { gateway_messages.opcode.Receive, gateway_messages.event.Receive } {
-        const message_data = try self.readMessage();
-
-        const event = try std.json.parseFromSliceLeaky(gateway_messages.event.Receive, arena, message_data, .{
-            .ignore_unknown_fields = true,
-        });
-
-        const opcode = std.meta.intToEnum(gateway_messages.opcode.Receive, event.op) catch {
-            return error.UnknownOpcode;
-        };
-
-        return .{ opcode, event };
     }
 
     fn handleHello(self: *Client, arena: std.mem.Allocator, hello_payload: gateway_messages.payload.Hello) !void {

@@ -24,17 +24,13 @@ pub fn main() !void {
     defer env_map.deinit();
 
     const token = env_map.get("ZEPPELIN_TOKEN") orelse @panic("Missing environment variable ZEPPELIN_TOKEN");
-
     var client: zeppelin.Client = try .init(.{
         .allocator = allocator,
     });
     defer client.deinit();
 
     try client.connectAndLogin(token, .{
-        .intents = .{
-            .guild_messages = true,
-            .message_content = true,
-        },
+        .intents = .all,
     });
 
     var handler: Handler = .{ .client = &client };
