@@ -11,7 +11,7 @@ pub const Snowflake = packed struct(u64) {
             const snowflake_int = try std.fmt.parseInt(Int, ref, 10);
             return resolve(snowflake_int);
         }
-        return resolve(ref.id);
+        @compileError("Unknown reference type to resolve: " ++ @typeName(ref_type));
     }
 
     increment: u12,

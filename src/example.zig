@@ -9,9 +9,9 @@ const Handler = struct {
     client: *zeppelin.Client,
 
     pub fn ready(self: *Handler, ready_event: zeppelin.Event.Ready) !void {
-        _ = self;
+        const cached_user = self.client.user_cache.resolve(ready_event.user.id).?;
 
-        std.log.info("Logged in as {s}", .{ready_event.user.username});
+        std.log.info("Logged in as {s}", .{cached_user.username});
     }
 };
 

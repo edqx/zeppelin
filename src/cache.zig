@@ -19,11 +19,12 @@ pub fn Cache(comptime Structure: type) type {
             };
         }
 
-        pub fn get(self: *CacheT, id: Snowflake) !?*Structure {
-            return self.inner_map.get(self.allocator, id);
+        pub fn get(self: *CacheT, id: Snowflake) ?*Structure {
+            return self.inner_map.get(id);
         }
 
-        pub fn resolve(self: *CacheT, ref: anytype) !?*Structure {
+        pub fn resolve(self: *CacheT, ref: anytype) ?*Structure {
+            if (@TypeOf(ref) == *Structure or @TypeOf(ref) == *const Structure) return ref;
             return self.get(try Snowflake.resolve(ref));
         }
 
