@@ -82,6 +82,128 @@ pub fn Send(comptime Payload: type) type {
     };
 }
 
+// A modified version of std.json.innerJsonParseFromValue that allows structs to distinguish
+// between non-existent fields and null values.
+fn modifiedJsonParseFromValue(
+    comptime T: type,
+    allocator: std.mem.Allocator,
+    source: std.json.Value,
+    options: std.json.ParseOptions,
+) !T {
+    const struct_info = @typeInfo(T).@"struct";
+
+    if (source != .object) return error.UnexpectedToken;
+
+    var r: T = undefined;
+    var fields_seen = [_]bool{false} ** struct_info.fields.len;
+
+    var it = source.object.iterator();
+    while (it.next()) |kv| {
+        const field_name = kv.key_ptr.*;
+
+        inline for (struct_info.fields, 0..) |field, i| {
+            if (comptime std.mem.startsWith(u8, field.name, "_has_")) continue;
+
+            if (field.is_comptime) @compileError("comptime fields are not supported: " ++ @typeName(T) ++ "." ++ field.name);
+            if (std.mem.eql(u8, field.name, field_name)) {
+                std.debug.assert(!fields_seen[i]); // Can't have duplicate keys in a Value.object.
+                @field(r, field.name) = try std.json.innerParseFromValue(field.type, allocator, kv.value_ptr.*, options);
+                if (@hasField(T, "_has_" ++ field.name)) {
+                    @field(r, "_has_" ++ field.name) = true;
+                }
+                fields_seen[i] = true;
+                break;
+            }
+        } else {
+            if (!options.ignore_unknown_fields) return error.UnknownField;
+        }
+    }
+
+    inline for (struct_info.fields, 0..) |field, i| {
+        if (comptime std.mem.startsWith(u8, field.name, "_has_")) continue;
+        if (!fields_seen[i]) {
+            if (field.defaultValue()) |default| {
+                @field(r, field.name) = default;
+            } else {
+                if (@hasField(T, "_has_" ++ field.name)) {
+                    @field(r, "_has_" ++ field.name) = false;
+                } else {
+                    return error.MissingField;
+                }
+            }
+        }
+    }
+
+    return r;
+}
+
+pub const Snowflake = []const u8;
+
+pub const Sharding = struct {
+    shard_id: i32,
+    num_shards: i32,
+};
+
+pub const AvatarDecorationData = struct {
+    asset: []const u8,
+    sku_id: Snowflake,
+};
+
+pub const User = struct {
+    id: Snowflake,
+    username: []const u8,
+    discriminator: []const u8,
+    global_name: ?[]const u8,
+    avatar: ?[]const u8,
+
+    _has_bot: bool,
+    bot: bool,
+
+    _has_system: bool,
+    system: bool,
+
+    _has_mfa_enabled: bool,
+    mfa_enabled: bool,
+
+    _has_banner: bool,
+    banner: ?[]const u8,
+
+    _has_accent_color: bool,
+    accent_color: ?i32,
+
+    _has_locale: bool,
+    locale: []const u8,
+
+    _has_verified: bool,
+    verified: bool,
+
+    _has_email: bool,
+    email: ?[]const u8,
+
+    _has_flags: bool,
+    flags: i32,
+
+    _has_premium_type: bool,
+    premium_type: i32,
+
+    _has_public_flags: bool,
+    public_flags: i32,
+
+    _has_avatar_decoration_data: bool,
+    avatar_decoration_data: ?AvatarDecorationData,
+
+    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !User {
+        return try modifiedJsonParseFromValue(User, allocator, source, options);
+    }
+};
+
+pub const Guild = struct {
+    pub const Unavailable = struct {
+        id: []const u8,
+        unavailable: bool,
+    };
+};
+
 pub const payload = struct {
     pub const Hello = struct {
         heartbeat_interval: i32,
@@ -92,11 +214,6 @@ pub const payload = struct {
             os: []const u8,
             browser: []const u8,
             device: []const u8,
-        };
-
-        pub const Sharding = struct {
-            shard_id: i32,
-            num_shards: i32,
         };
 
         token: []const u8,
@@ -131,6 +248,26 @@ pub const payload = struct {
             try jw.objectField("intents");
             try jw.write(self.intents);
             try jw.endObject();
+        }
+    };
+
+    pub const Ready = struct {
+        v: i32,
+        user: User,
+        guilds: []Guild.Unavailable,
+        session_id: []const u8,
+        resume_gateway_url: []const u8,
+
+        _has_shard: bool,
+        shard: Sharding,
+
+        application: struct {
+            id: Snowflake,
+            flags: i32,
+        },
+
+        pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !Ready {
+            return try modifiedJsonParseFromValue(Ready, allocator, source, options);
         }
     };
 };

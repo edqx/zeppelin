@@ -1,6 +1,11 @@
 const std = @import("std");
 const websocket = @import("websocket");
 const gateway = @import("gateway.zig");
+const gateway_message = @import("gateway_message.zig");
+
+const Cache = @import("./cache.zig").Cache;
+
+const User = @import("./structures/User.zig");
 
 const Client = @This();
 
@@ -14,7 +19,10 @@ pub const Event = union(enum) {
         message_create,
     };
 
-    pub const Ready = struct {};
+    pub const Ready = struct {
+        user: *User,
+    };
+
     pub const MessageCreate = struct {};
 
     ready: Ready,
@@ -29,10 +37,13 @@ pub const dispatch_event_map: std.StaticStringMap(Event.DispatchType) = .initCom
 allocator: std.mem.Allocator,
 maybe_gateway_client: ?gateway.Client,
 
+user_cache: Cache(User),
+
 pub fn init(options: InitOptions) !Client {
     return .{
         .allocator = options.allocator,
         .maybe_gateway_client = null,
+        .user_cache = .init(options.allocator),
     };
 }
 
@@ -76,8 +87,22 @@ pub fn receive(self: *Client) !Event {
 
                 switch (dispatch_event_type) {
                     .ready => {
+                        const ready_data = try std.json.parseFromValueLeaky(
+                            gateway_message.payload.Ready,
+                            allocator,
+                            dispatch_event.data_json,
+                            .{
+                                .allocate = .alloc_always,
+                                .ignore_unknown_fields = true,
+                            },
+                        );
+
+                        const user = try self.user_cache.patch(ready_data.user);
+
                         return .{
-                            .ready = .{},
+                            .ready = .{
+                                .user = user,
+                            },
                         };
                     },
                     .message_create => {

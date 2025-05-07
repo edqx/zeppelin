@@ -10,9 +10,8 @@ const Handler = struct {
 
     pub fn ready(self: *Handler, ready_event: zeppelin.Event.Ready) !void {
         _ = self;
-        _ = ready_event;
 
-        std.log.info("Bot ready!", .{});
+        std.log.info("Logged in as {s}", .{ready_event.user.username});
     }
 };
 
