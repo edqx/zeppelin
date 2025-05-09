@@ -239,7 +239,10 @@ pub const Client = struct {
                     if (message.data.len > 1) blk: {
                         const close_opcode_int = std.mem.readInt(u16, message.data[0..2], .big);
 
-                        const close_opcode: gateway_message.opcode.Close = std.meta.intToEnum(gateway_message.opcode.Close, close_opcode_int) catch break :blk;
+                        const close_opcode = std.meta.intToEnum(
+                            gateway_message.opcode.Close,
+                            close_opcode_int,
+                        ) catch break :blk;
 
                         return .{ .close = close_opcode };
                     }

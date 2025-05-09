@@ -2,7 +2,7 @@ const std = @import("std");
 
 const Snowflake = @import("snowflake.zig").Snowflake;
 
-pub fn Cache(comptime Structure: type) type {
+pub fn Cache(comptime Structure: type, comptime Context: type) type {
     return struct {
         const CacheT = @This();
 
@@ -19,6 +19,15 @@ pub fn Cache(comptime Structure: type) type {
             };
         }
 
+        pub fn deinit(self: *CacheT) void {
+            var values = self.inner_map.valueIterator();
+            while (values.next()) |val_ptr| {
+                val_ptr.*.deinit(self.allocator);
+            }
+            self.inner_map.deinit(self.allocator);
+            self.pool.deinit();
+        }
+
         pub fn get(self: *CacheT, id: Snowflake) ?*Structure {
             return self.inner_map.get(id);
         }
@@ -28,13 +37,13 @@ pub fn Cache(comptime Structure: type) type {
             return self.get(try Snowflake.resolve(ref));
         }
 
-        pub fn patch(self: *CacheT, data: Structure.Data) !*Structure {
+        pub fn patch(self: *CacheT, context: Context, data: Structure.Data) !*Structure {
             const get_result = try self.inner_map.getOrPut(self.allocator, try Snowflake.resolve(data.id));
             if (!get_result.found_existing) {
                 get_result.value_ptr.* = try self.pool.create();
-                try get_result.value_ptr.*.init(self.allocator, data);
+                try get_result.value_ptr.*.init(context, self.allocator, data);
             } else {
-                try get_result.value_ptr.*.patch(self.allocator, data);
+                try get_result.value_ptr.*.patch(context, self.allocator, data);
             }
 
             return get_result.value_ptr.*;

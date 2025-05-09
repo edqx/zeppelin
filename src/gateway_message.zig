@@ -82,62 +82,8 @@ pub fn Send(comptime Payload: type) type {
     };
 }
 
-// A modified version of std.json.innerJsonParseFromValue that allows structs to distinguish
-// between non-existent fields and null values.
-fn modifiedJsonParseFromValue(
-    comptime T: type,
-    allocator: std.mem.Allocator,
-    source: std.json.Value,
-    options: std.json.ParseOptions,
-) !T {
-    const struct_info = @typeInfo(T).@"struct";
-
-    if (source != .object) return error.UnexpectedToken;
-
-    var r: T = undefined;
-    var fields_seen = [_]bool{false} ** struct_info.fields.len;
-
-    var it = source.object.iterator();
-    while (it.next()) |kv| {
-        const field_name = kv.key_ptr.*;
-
-        inline for (struct_info.fields, 0..) |field, i| {
-            if (comptime std.mem.startsWith(u8, field.name, "_has_")) continue;
-
-            if (field.is_comptime) @compileError("comptime fields are not supported: " ++ @typeName(T) ++ "." ++ field.name);
-            if (std.mem.eql(u8, field.name, field_name)) {
-                std.debug.assert(!fields_seen[i]); // Can't have duplicate keys in a Value.object.
-                @field(r, field.name) = try std.json.innerParseFromValue(field.type, allocator, kv.value_ptr.*, options);
-                if (@hasField(T, "_has_" ++ field.name)) {
-                    @field(r, "_has_" ++ field.name) = true;
-                }
-                fields_seen[i] = true;
-                break;
-            }
-        } else {
-            if (!options.ignore_unknown_fields) return error.UnknownField;
-        }
-    }
-
-    inline for (struct_info.fields, 0..) |field, i| {
-        if (comptime std.mem.startsWith(u8, field.name, "_has_")) continue;
-        if (!fields_seen[i]) {
-            if (field.defaultValue()) |default| {
-                @field(r, field.name) = default;
-            } else {
-                if (@hasField(T, "_has_" ++ field.name)) {
-                    @field(r, "_has_" ++ field.name) = false;
-                } else {
-                    return error.MissingField;
-                }
-            }
-        }
-    }
-
-    return r;
-}
-
 pub const Snowflake = []const u8;
+pub const Iso8601Timestamp = []const u8;
 
 pub const Sharding = struct {
     shard_id: i32,
@@ -149,59 +95,105 @@ pub const AvatarDecorationData = struct {
     sku_id: Snowflake,
 };
 
+pub const Application = std.json.Value; // TODO
+
 pub const User = struct {
     id: Snowflake,
     username: []const u8,
     discriminator: []const u8,
     global_name: ?[]const u8,
     avatar: ?[]const u8,
-
-    _has_bot: bool,
-    bot: bool,
-
-    _has_system: bool,
-    system: bool,
-
-    _has_mfa_enabled: bool,
-    mfa_enabled: bool,
-
-    _has_banner: bool,
-    banner: ?[]const u8,
-
-    _has_accent_color: bool,
-    accent_color: ?i32,
-
-    _has_locale: bool,
-    locale: []const u8,
-
-    _has_verified: bool,
-    verified: bool,
-
-    _has_email: bool,
-    email: ?[]const u8,
-
-    _has_flags: bool,
-    flags: i32,
-
-    _has_premium_type: bool,
-    premium_type: i32,
-
-    _has_public_flags: bool,
-    public_flags: i32,
-
-    _has_avatar_decoration_data: bool,
-    avatar_decoration_data: ?AvatarDecorationData,
-
-    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !User {
-        return try modifiedJsonParseFromValue(User, allocator, source, options);
-    }
+    bot: ?bool = null,
+    system: ?bool = null,
+    mfa_enabled: ?bool = null,
+    banner: ??[]const u8 = null,
+    accent_color: ??i32 = null,
+    locale: ?[]const u8 = null,
+    verified: ?bool = null,
+    email: ??[]const u8 = null,
+    flags: ?i32 = null,
+    premium_type: ?i32 = null,
+    public_flags: ?i32 = null,
+    avatar_decoration_data: ??AvatarDecorationData = null,
 };
+
+pub const Role = std.json.Value; // TODO
 
 pub const Guild = struct {
     pub const Unavailable = struct {
         id: []const u8,
         unavailable: bool,
     };
+
+    // TODO
+};
+
+pub const Channel = struct {
+    pub const Mention = std.json.Value; // TODO
+
+    // TODO
+};
+
+pub const Attachment = std.json.Value; // TODO
+pub const Embed = std.json.Value; // TODO
+pub const Reaction = std.json.Value; // TODO
+
+pub const Sticker = std.json.Value; // TODO
+pub const RoleSubscriptionData = std.json.Value; // TODO
+
+pub const Message = struct {
+    pub const Type = i32;
+
+    pub const Activity = struct {
+        type: i32,
+
+        party_id: ?[]const u8 = null,
+    };
+
+    pub const Reference = std.json.Value; // TODO
+    pub const Snapshot = std.json.Value; // TODO
+    pub const InteractionMetadata = std.json.Value; // TODO
+    pub const Component = std.json.Value; // TODO
+    pub const StickerItem = std.json.Value; // TODO
+    pub const Resolved = std.json.Value; // TODO
+    pub const Poll = std.json.Value; // TODO
+    pub const Call = std.json.Value; // TODO
+
+    id: Snowflake,
+    channel_id: []const u8,
+    author: User,
+    content: []const u8,
+    timestamp: Iso8601Timestamp,
+    edited_timestamp: ?Iso8601Timestamp,
+    tts: bool,
+    mention_everyone: bool,
+    mentions: []User,
+    mention_roles: []Role,
+    mention_channels: ?[]Channel.Mention = null,
+    attachments: []Attachment,
+    embeds: []Embed,
+    reactions: ?[]Reaction = null,
+    nonce: ?std.json.Value = null,
+    pinned: bool,
+    webhook_id: ?Snowflake = null,
+    type: Type,
+    activity: ?Activity = null,
+    application: ?Application = null, // TODO: only a 'partial' application
+    application_id: ?Snowflake = null,
+    flags: ?i32 = null,
+    message_reference: ?Reference = null,
+    message_snapshots: ?[]Snapshot = null,
+    referenced_message: ??*Message = null,
+    interaction_metadata: ?InteractionMetadata = null,
+    thread: ?Channel = null,
+    components: ?[]Component = null,
+    sticker_items: ?[]StickerItem = null,
+    stickers: ?[]Sticker = null,
+    position: ?i32 = null,
+    role_subscription_data: ?RoleSubscriptionData = null,
+    resolved: ?Resolved = null,
+    poll: ?Poll = null,
+    call: ?Call = null,
 };
 
 pub const payload = struct {
@@ -257,17 +249,30 @@ pub const payload = struct {
         guilds: []Guild.Unavailable,
         session_id: []const u8,
         resume_gateway_url: []const u8,
-
-        _has_shard: bool,
-        shard: Sharding,
-
+        shard: ?Sharding = null,
         application: struct {
             id: Snowflake,
             flags: i32,
         },
+    };
 
-        pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !Ready {
-            return try modifiedJsonParseFromValue(Ready, allocator, source, options);
+    pub const MessageCreate = struct {
+        inner_message: Message,
+
+        extra: struct {
+            guild_id: ?Snowflake = null,
+            member: ?std.json.Value = null, // TODO: contains partial member
+            mentions: []User, // TODO: each user also contains a 'member' field containing a partial guild member
+        },
+
+        pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !MessageCreate {
+            const inner_message = try std.json.innerParseFromValue(Message, allocator, source, options);
+            const extra = try std.json.innerParseFromValue(@FieldType(MessageCreate, "extra"), allocator, source, options);
+
+            return .{
+                .inner_message = inner_message,
+                .extra = extra,
+            };
         }
     };
 };

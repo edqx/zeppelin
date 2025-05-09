@@ -9,9 +9,17 @@ const Handler = struct {
     client: *zeppelin.Client,
 
     pub fn ready(self: *Handler, ready_event: zeppelin.Event.Ready) !void {
-        const cached_user = self.client.user_cache.resolve(ready_event.user.id).?;
+        const cached_user = self.client.global_cache.users.resolve(ready_event.user.id).?;
 
         std.log.info("Logged in as {s}", .{cached_user.username});
+    }
+
+    pub fn messageCreate(self: *Handler, message_create_event: zeppelin.Event.MessageCreate) !void {
+        _ = self;
+
+        const message = message_create_event.message;
+
+        std.log.info("'{s}' from {s}", .{ message.content, message.author.username });
     }
 };
 

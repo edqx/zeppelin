@@ -3,9 +3,10 @@ const websocket = @import("websocket");
 const gateway = @import("gateway.zig");
 const gateway_message = @import("gateway_message.zig");
 
-const Cache = @import("./cache.zig").Cache;
+const Cache = @import("cache.zig").Cache;
 
 const User = @import("./structures/User.zig");
+const Message = @import("structures/Message.zig");
 
 const Client = @This();
 
@@ -23,7 +24,9 @@ pub const Event = union(enum) {
         user: *User,
     };
 
-    pub const MessageCreate = struct {};
+    pub const MessageCreate = struct {
+        message: *Message,
+    };
 
     ready: Ready,
     message_create: MessageCreate,
@@ -34,16 +37,24 @@ pub const dispatch_event_map: std.StaticStringMap(Event.DispatchType) = .initCom
     .{ "MESSAGE_CREATE", .message_create },
 });
 
+pub const GlobalCache = struct {
+    users: Cache(User, *GlobalCache),
+    messages: Cache(Message, *GlobalCache),
+};
+
 allocator: std.mem.Allocator,
 maybe_gateway_client: ?gateway.Client,
 
-user_cache: Cache(User),
+global_cache: GlobalCache,
 
 pub fn init(options: InitOptions) !Client {
     return .{
         .allocator = options.allocator,
         .maybe_gateway_client = null,
-        .user_cache = .init(options.allocator),
+        .global_cache = .{
+            .users = .init(options.allocator),
+            .messages = .init(options.allocator),
+        },
     };
 }
 
@@ -51,6 +62,8 @@ pub fn deinit(self: *Client) void {
     if (self.maybe_gateway_client) |*gateway_client| {
         gateway_client.deinit();
     }
+    self.global_cache.users.deinit();
+    self.global_cache.messages.deinit();
 }
 
 pub fn connected(self: *Client) bool {
@@ -97,7 +110,7 @@ pub fn receive(self: *Client) !Event {
                             },
                         );
 
-                        const user = try self.user_cache.patch(ready_data.user);
+                        const user = try self.global_cache.users.patch(&self.global_cache, ready_data.user);
 
                         return .{
                             .ready = .{
@@ -106,8 +119,22 @@ pub fn receive(self: *Client) !Event {
                         };
                     },
                     .message_create => {
+                        const message_data = try std.json.parseFromValueLeaky(
+                            gateway_message.payload.MessageCreate,
+                            allocator,
+                            dispatch_event.data_json,
+                            .{
+                                .allocate = .alloc_always,
+                                .ignore_unknown_fields = true,
+                            },
+                        );
+
+                        const message = try self.global_cache.messages.patch(&self.global_cache, message_data.inner_message);
+
                         return .{
-                            .message_create = .{},
+                            .message_create = .{
+                                .message = message,
+                            },
                         };
                     },
                 }
