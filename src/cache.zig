@@ -37,15 +37,25 @@ pub fn Cache(comptime Structure: type, comptime Context: type) type {
             return self.get(try Snowflake.resolve(ref));
         }
 
-        pub fn patch(self: *CacheT, context: Context, data: Structure.Data) !*Structure {
-            const get_result = try self.inner_map.getOrPut(self.allocator, try Snowflake.resolve(data.id));
+        pub fn patch(self: *CacheT, context: Context, id: Snowflake, data: Structure.Data) !*Structure {
+            const get_result = try self.inner_map.getOrPut(self.allocator, id);
             if (!get_result.found_existing) {
                 get_result.value_ptr.* = try self.pool.create();
-                try get_result.value_ptr.*.init(context, self.allocator, data);
-            } else {
-                try get_result.value_ptr.*.patch(context, self.allocator, data);
+                get_result.value_ptr.*.id = id;
+                try get_result.value_ptr.*.init(false);
             }
+            try get_result.value_ptr.*.patch(context, self.allocator, data);
 
+            return get_result.value_ptr.*;
+        }
+
+        pub fn touch(self: *CacheT, id: Snowflake) !*Structure {
+            const get_result = try self.inner_map.getOrPut(self.allocator, id);
+            if (!get_result.found_existing) {
+                get_result.value_ptr.* = try self.pool.create();
+                get_result.value_ptr.*.id = id;
+                try get_result.value_ptr.*.init(true);
+            }
             return get_result.value_ptr.*;
         }
     };

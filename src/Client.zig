@@ -110,7 +110,11 @@ pub fn receive(self: *Client) !Event {
                             },
                         );
 
-                        const user = try self.global_cache.users.patch(&self.global_cache, ready_data.user);
+                        const user = try self.global_cache.users.patch(
+                            &self.global_cache,
+                            try .resolve(ready_data.user.id),
+                            ready_data.user,
+                        );
 
                         return .{
                             .ready = .{
@@ -129,7 +133,11 @@ pub fn receive(self: *Client) !Event {
                             },
                         );
 
-                        const message = try self.global_cache.messages.patch(&self.global_cache, message_data.inner_message);
+                        const message = try self.global_cache.messages.patch(
+                            &self.global_cache,
+                            try .resolve(message_data.inner_message.id),
+                            message_data.inner_message,
+                        );
 
                         return .{
                             .message_create = .{

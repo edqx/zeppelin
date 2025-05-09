@@ -32,8 +32,9 @@ premium_type: Queryable(i32),
 public_flags: Queryable(i32),
 avatar_decoration_data: Queryable(?AvatarDecorationData),
 
-pub fn init(self: *User, cache: *GlobalCache, gpa: std.mem.Allocator, data: Data) !void {
-    self.id = try .resolve(data.id);
+pub fn init(self: *User, touch: bool) !void {
+    _ = touch;
+
     self.username = "";
     self.discriminator = "";
     self.bot = .unknown;
@@ -48,7 +49,6 @@ pub fn init(self: *User, cache: *GlobalCache, gpa: std.mem.Allocator, data: Data
     self.premium_type = .unknown;
     self.public_flags = .unknown;
     self.avatar_decoration_data = .unknown;
-    try self.patch(cache, gpa, data);
 }
 
 pub fn deinit(self: *User, gpa: std.mem.Allocator) void {

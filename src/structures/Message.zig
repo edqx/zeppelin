@@ -72,11 +72,11 @@ id: Snowflake,
 content: []const u8,
 author: *User,
 
-pub fn init(self: *Message, cache: *GlobalCache, gpa: std.mem.Allocator, data: Data) !void {
-    self.id = try .resolve(data.id);
+pub fn init(self: *Message, comptime touch: bool) !void {
+    if (touch) @compileError("Cannot touch message");
+
     self.content = "";
-    self.author = try cache.users.patch(cache, data.author);
-    try self.patch(cache, gpa, data);
+    self.author = undefined;
 }
 
 pub fn deinit(self: *Message, gpa: std.mem.Allocator) void {
@@ -86,5 +86,5 @@ pub fn deinit(self: *Message, gpa: std.mem.Allocator) void {
 pub fn patch(self: *Message, cache: *GlobalCache, gpa: std.mem.Allocator, data: Data) !void {
     gpa.free(self.content);
     self.content = try gpa.dupe(u8, data.content);
-    self.author = try cache.users.patch(cache, data.author);
+    self.author = try cache.users.patch(cache, try .resolve(data.author.id), data.author);
 }
