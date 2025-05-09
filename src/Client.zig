@@ -6,6 +6,7 @@ const gateway_message = @import("gateway_message.zig");
 const Cache = @import("cache.zig").Cache;
 
 const Channel = @import("structures/Channel.zig");
+const Guild = @import("structures/Guild.zig");
 const Message = @import("structures/Message.zig");
 const User = @import("structures/User.zig");
 
@@ -18,6 +19,7 @@ pub const InitOptions = struct {
 pub const Event = union(enum) {
     pub const DispatchType = enum {
         ready,
+        guild_create,
         message_create,
     };
 
@@ -25,21 +27,28 @@ pub const Event = union(enum) {
         user: *User,
     };
 
+    pub const GuildCreate = struct {
+        guild: *Guild,
+    };
+
     pub const MessageCreate = struct {
         message: *Message,
     };
 
     ready: Ready,
+    guild_create: GuildCreate,
     message_create: MessageCreate,
 };
 
 pub const dispatch_event_map: std.StaticStringMap(Event.DispatchType) = .initComptime(.{
     .{ "READY", .ready },
+    .{ "GUILD_CREATE", .guild_create },
     .{ "MESSAGE_CREATE", .message_create },
 });
 
 pub const GlobalCache = struct {
     channels: Cache(Channel, *Client),
+    guilds: Cache(Guild, *Client),
     messages: Cache(Message, *Client),
     users: Cache(User, *Client),
 };
@@ -55,6 +64,7 @@ pub fn init(options: InitOptions) !Client {
         .maybe_gateway_client = null,
         .global_cache = .{
             .channels = .init(options.allocator),
+            .guilds = .init(options.allocator),
             .messages = .init(options.allocator),
             .users = .init(options.allocator),
         },
@@ -88,6 +98,80 @@ pub fn connectAndLogin(self: *Client, token: []const u8, options: gateway.Option
     try self.maybe_gateway_client.?.connectAndAuthenticate();
 }
 
+fn processReadyEvent(self: *Client, allocator: std.mem.Allocator, json: std.json.Value) !Event.Ready {
+    const ready_data = try std.json.parseFromValueLeaky(
+        gateway_message.payload.Ready,
+        allocator,
+        json,
+        .{
+            .allocate = .alloc_always,
+            .ignore_unknown_fields = true,
+        },
+    );
+
+    const user = try self.global_cache.users.patch(
+        self,
+        try .resolve(ready_data.user.id),
+        ready_data.user,
+    );
+
+    return .{
+        .user = user,
+    };
+}
+
+fn processGuildCreate(self: *Client, allocator: std.mem.Allocator, json: std.json.Value) !Event.GuildCreate {
+    const guild_data = try std.json.parseFromValueLeaky(
+        gateway_message.payload.GuildCreate,
+        allocator,
+        json,
+        .{
+            .allocate = .alloc_always,
+            .ignore_unknown_fields = true,
+        },
+    );
+
+    const guild = switch (guild_data) {
+        .available => |available_data| try self.global_cache.guilds.patch(
+            self,
+            try .resolve(available_data.inner_guild.id),
+            .{ .available = .{
+                .base = available_data.inner_guild,
+                .channels = available_data.extra.channels,
+            } },
+        ),
+        .unavailable => |unavailable_data| try self.global_cache.guilds.patch(
+            self,
+            try .resolve(unavailable_data.id),
+            .{ .unavailable = unavailable_data },
+        ),
+    };
+
+    return .{ .guild = guild };
+}
+
+fn processMessageCreate(self: *Client, allocator: std.mem.Allocator, json: std.json.Value) !Event.MessageCreate {
+    const message_data = try std.json.parseFromValueLeaky(
+        gateway_message.payload.MessageCreate,
+        allocator,
+        json,
+        .{
+            .allocate = .alloc_always,
+            .ignore_unknown_fields = true,
+        },
+    );
+
+    const message = try self.global_cache.messages.patch(
+        self,
+        try .resolve(message_data.inner_message.id),
+        message_data.inner_message,
+    );
+
+    return .{
+        .message = message,
+    };
+}
+
 pub fn receive(self: *Client) !Event {
     const gateway_client: *gateway.Client = &(self.maybe_gateway_client orelse return error.NotConnected);
 
@@ -103,50 +187,13 @@ pub fn receive(self: *Client) !Event {
 
                 switch (dispatch_event_type) {
                     .ready => {
-                        const ready_data = try std.json.parseFromValueLeaky(
-                            gateway_message.payload.Ready,
-                            allocator,
-                            dispatch_event.data_json,
-                            .{
-                                .allocate = .alloc_always,
-                                .ignore_unknown_fields = true,
-                            },
-                        );
-
-                        const user = try self.global_cache.users.patch(
-                            self,
-                            try .resolve(ready_data.user.id),
-                            ready_data.user,
-                        );
-
-                        return .{
-                            .ready = .{
-                                .user = user,
-                            },
-                        };
+                        return .{ .ready = try self.processReadyEvent(allocator, dispatch_event.data_json) };
+                    },
+                    .guild_create => {
+                        return .{ .guild_create = try self.processGuildCreate(allocator, dispatch_event.data_json) };
                     },
                     .message_create => {
-                        const message_data = try std.json.parseFromValueLeaky(
-                            gateway_message.payload.MessageCreate,
-                            allocator,
-                            dispatch_event.data_json,
-                            .{
-                                .allocate = .alloc_always,
-                                .ignore_unknown_fields = true,
-                            },
-                        );
-
-                        const message = try self.global_cache.messages.patch(
-                            self,
-                            try .resolve(message_data.inner_message.id),
-                            message_data.inner_message,
-                        );
-
-                        return .{
-                            .message_create = .{
-                                .message = message,
-                            },
-                        };
+                        return .{ .message_create = try self.processMessageCreate(allocator, dispatch_event.data_json) };
                     },
                 }
             },
@@ -183,6 +230,7 @@ pub fn receiveAndDispatch(self: *Client, handler: anytype) !void {
 
     switch (event) {
         .ready => |ev| if (@hasDecl(@TypeOf(handler.*), "ready")) try handler.ready(ev),
+        .guild_create => |ev| if (@hasDecl(@TypeOf(handler.*), "guildCreate")) try handler.guildCreate(ev),
         .message_create => |ev| if (@hasDecl(@TypeOf(handler.*), "messageCreate")) try handler.messageCreate(ev),
     }
 }

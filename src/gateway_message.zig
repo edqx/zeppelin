@@ -118,6 +118,7 @@ pub const User = struct {
 };
 
 pub const Role = std.json.Value; // TODO
+pub const Emoji = std.json.Value; // TODO
 
 pub const Guild = struct {
     pub const Unavailable = struct {
@@ -125,18 +126,141 @@ pub const Guild = struct {
         unavailable: bool,
     };
 
-    // TODO
+    pub const Feature = std.json.Value; // TODO
+    pub const Member = std.json.Value; // TODO
+    pub const WelcomeScreen = std.json.Value; // TODO
+    pub const IncidentsData = std.json.Value; // TODO
+
+    id: Snowflake,
+    name: []const u8,
+    icon: ?[]const u8,
+    icon_hash: ??[]const u8 = null,
+    splash: ?[]const u8,
+    discovery_splash: ?[]const u8,
+    owner: ?bool = null,
+    owner_id: Snowflake,
+    permissions: ?[]const u8 = null,
+    region: ??[]const u8 = null,
+    afk_channel_id: ?Snowflake,
+    afk_timeout: i32,
+    widget_enabled: ?bool = null,
+    widget_channel_id: ??Snowflake = null,
+    verification_level: i32,
+    default_message_notifications: i32,
+    explicit_content_filter: i32,
+    roles: []Role,
+    emojis: []Emoji,
+    features: []Feature,
+    mfa_level: i32,
+    application_id: ?Snowflake,
+    system_channel_id: ?Snowflake,
+    system_channel_flags: i32,
+    rules_channel_id: ?Snowflake,
+    max_presences: ??i32 = null,
+    max_numbers: ??i32 = null,
+    vanity_url_code: ?[]const u8,
+    description: ?[]const u8,
+    banner: ?[]const u8,
+    premium_tier: i32,
+    premium_subscription_count: i32,
+    preferred_locale: []const u8,
+    public_updates_channel_id: ?Snowflake,
+    max_video_channel_users: ?i32 = null,
+    max_stage_video_channel_users: ?i32 = null,
+    approximate_member_count: ?i32 = null,
+    approximate_presence_count: ?i32 = null,
+    welcome_screen: ?WelcomeScreen = null,
+    nsfw_level: i32,
+    stickers: ?[]Sticker = null,
+    premium_progress_bar_enabled: bool,
+    safety_alerts_channel_id: ?Snowflake,
+    incidents_data: ?IncidentsData,
+};
+
+pub const Permission = struct {
+    pub const Overwrite = struct {
+        id: Snowflake,
+        type: i32,
+        allow: []const u8,
+        deny: []const u8,
+    };
 };
 
 pub const Channel = struct {
     pub const Mention = std.json.Value; // TODO
 
-    // TODO
+    pub const ThreadMetadata = struct {
+        archived: bool,
+        auto_archive_duration: i32,
+        archive_timestamp: Iso8601Timestamp,
+        locked: bool,
+        invitable: ?bool,
+        create_timestamp: ??Iso8601Timestamp,
+    };
+
+    pub const ThreadMember = struct {
+        id: ?Snowflake = null,
+        user_id: ?Snowflake = null,
+        join_timestamp: Iso8601Timestamp,
+        flags: i32,
+        member: ?Guild.Member = null,
+    };
+
+    pub const ForumTag = struct {
+        id: Snowflake,
+        name: []const u8,
+        moderated: bool,
+        emoji_id: ?Snowflake,
+        emoji_name: ?[]const u8,
+    };
+
+    id: Snowflake,
+    type: i32,
+    guild_id: ?Snowflake = null,
+    position: ?i32 = null,
+    permission_overwrites: ?[]Permission.Overwrite = null,
+    name: ??[]const u8 = null,
+    topic: ??[]const u8 = null,
+    nsfw: ?bool = null,
+    last_message_id: ??Snowflake = null,
+    bitrate: ?i32 = null,
+    user_limit: ?i32 = null,
+    rate_limit_per_user: ?i32 = null,
+    recipients: ?[]User = null,
+    icon: ??[]const u8 = null,
+    owner_id: ?Snowflake = null,
+    application_id: ?Snowflake = null,
+    managed: ?bool = null,
+    parent_id: ??Snowflake = null,
+    last_pin_timestamp: ??Iso8601Timestamp = null,
+    rtc_region: ??[]const u8 = null,
+    video_quality_mode: ?i32 = null,
+    message_count: ?i32 = null,
+    member_count: ?i32 = null,
+    thread_metadata: ?ThreadMetadata = null,
+    member: ?ThreadMember = null,
+    default_auto_archive_duration: ?i32 = null,
+    permissions: ?[]const u8 = null,
+    flags: ?i32 = null,
+    total_message_sent: ?i32 = null,
+    available_tags: ?[]ForumTag = null,
+    applied_tags: ?[]Snowflake = null,
+    default_reaction_emoji: ??Reaction.Default = null,
+    default_thread_rate_limit_per_user: ?i32 = null,
+    default_sort_order: ??i32 = null,
+    default_forum_layout: ?i32 = null,
 };
 
 pub const Attachment = std.json.Value; // TODO
 pub const Embed = std.json.Value; // TODO
-pub const Reaction = std.json.Value; // TODO
+pub const Reaction = struct {
+    pub const Default = struct {
+        emoji_id: ?Snowflake,
+        emoji_name: ?[]const u8,
+    };
+
+    // TODO
+};
 
 pub const Sticker = std.json.Value; // TODO
 pub const RoleSubscriptionData = std.json.Value; // TODO
@@ -256,14 +380,61 @@ pub const payload = struct {
         },
     };
 
-    pub const MessageCreate = struct {
-        inner_message: Message,
+    pub const GuildCreate = union(enum) {
+        pub const Available = struct {
+            pub const Extra = struct {
+                joined_at: Iso8601Timestamp,
+                large: bool,
+                unavailable: ?bool = null,
+                member_count: i32,
+                voice_states: []std.json.Value, // TODO
+                members: []Guild.Member,
+                channels: []Channel,
+                presences: []std.json.Value, // TODO
+                stage_instances: []std.json.Value, // TODO
+                guild_scheduled_events: []std.json.Value, // TODO
+                soundboard_sounds: []std.json.Value, // TODO
+            };
 
-        extra: struct {
+            inner_guild: Guild,
+            extra: Extra,
+
+            pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !GuildCreate.Available {
+                const inner_guild = try std.json.innerParseFromValue(Guild, allocator, source, options);
+                const extra = try std.json.innerParseFromValue(@FieldType(GuildCreate.Available, "extra"), allocator, source, options);
+
+                return .{
+                    .inner_guild = inner_guild,
+                    .extra = extra,
+                };
+            }
+        };
+
+        available: Available,
+        unavailable: Guild.Unavailable,
+
+        pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !GuildCreate {
+            if (source != .object) return std.json.ParseFromValueError.UnexpectedToken;
+            const unavailable = source.object.get("unavailable") orelse return std.json.ParseFromValueError.MissingField;
+            if (unavailable != .bool) return std.json.ParseFromValueError.UnexpectedToken;
+
+            return if (unavailable.bool) .{
+                .unavailable = try std.json.innerParseFromValue(Guild.Unavailable, allocator, source, options),
+            } else .{
+                .available = try std.json.innerParseFromValue(GuildCreate.Available, allocator, source, options),
+            };
+        }
+    };
+
+    pub const MessageCreate = struct {
+        pub const Extra = struct {
             guild_id: ?Snowflake = null,
             member: ?std.json.Value = null, // TODO: contains partial member
             mentions: []User, // TODO: each user also contains a 'member' field containing a partial guild member
-        },
+        };
+
+        inner_message: Message,
+        extra: Extra,
 
         pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !MessageCreate {
             const inner_message = try std.json.innerParseFromValue(Message, allocator, source, options);

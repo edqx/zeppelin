@@ -19,7 +19,13 @@ const Handler = struct {
 
         const message = message_create_event.message;
 
-        std.log.info("'{s}' from {s}", .{ message.content, message.author.username });
+        std.log.info("'{s}' from {s} in {s} in guild {s} which has {} channels", .{
+            message.content,
+            message.author.username,
+            message.channel.name.?.known.?,
+            message.channel.guild.?.known.name,
+            message.channel.guild.?.known.channels.known.len,
+        });
     }
 };
 
