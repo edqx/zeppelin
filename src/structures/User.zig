@@ -2,7 +2,7 @@ const std = @import("std");
 
 const Snowflake = @import("../snowflake.zig").Snowflake;
 const Queryable = @import("../queryable.zig").Queryable;
-const GlobalCache = @import("../Client.zig").GlobalCache;
+const Client = @import("../Client.zig");
 
 pub const Data = @import("../gateway_message.zig").User;
 
@@ -13,56 +13,37 @@ const AvatarDecorationData = struct {
     sku_id: Snowflake,
 };
 
+context: *Client,
 id: Snowflake,
+received: bool,
 
-username: []const u8,
-discriminator: []const u8,
-global_name: ?[]const u8,
-avatar: ?[]const u8,
-bot: Queryable(bool),
-system: Queryable(bool),
-mfa_enabled: Queryable(bool),
-banner: Queryable(?[]const u8),
-accent_color: Queryable(?i32),
-locale: Queryable([]const u8),
-verified: Queryable(bool),
-email: Queryable(?[]const u8),
-flags: Queryable(i32),
-premium_type: Queryable(i32),
-public_flags: Queryable(i32),
-avatar_decoration_data: Queryable(?AvatarDecorationData),
+username: []const u8 = "",
+discriminator: []const u8 = "",
+global_name: ?[]const u8 = null,
+avatar: ?[]const u8 = null,
+bot: Queryable(bool) = .unknown,
+system: Queryable(bool) = .unknown,
+mfa_enabled: Queryable(bool) = .unknown,
+banner: Queryable(?[]const u8) = .unknown,
+accent_color: Queryable(?i32) = .unknown,
+locale: Queryable([]const u8) = .unknown,
+verified: Queryable(bool) = .unknown,
+email: Queryable(?[]const u8) = .unknown,
+flags: Queryable(i32) = .unknown,
+premium_type: Queryable(i32) = .unknown,
+public_flags: Queryable(i32) = .unknown,
+avatar_decoration_data: Queryable(?AvatarDecorationData) = .unknown,
 
-pub fn init(self: *User, touch: bool) !void {
-    _ = touch;
-
-    self.username = "";
-    self.discriminator = "";
-    self.bot = .unknown;
-    self.system = .unknown;
-    self.mfa_enabled = .unknown;
-    self.banner = .unknown;
-    self.accent_color = .unknown;
-    self.locale = .unknown;
-    self.verified = .unknown;
-    self.email = .unknown;
-    self.flags = .unknown;
-    self.premium_type = .unknown;
-    self.public_flags = .unknown;
-    self.avatar_decoration_data = .unknown;
+pub fn deinit(self: *User) void {
+    self.context.allocator.free(self.username);
+    self.context.allocator.free(self.discriminator);
 }
 
-pub fn deinit(self: *User, gpa: std.mem.Allocator) void {
-    gpa.free(self.username);
-    gpa.free(self.discriminator);
-}
-
-pub fn patch(self: *User, cache: *GlobalCache, gpa: std.mem.Allocator, data: Data) !void {
-    _ = cache;
-
-    gpa.free(self.username);
-    gpa.free(self.discriminator);
-    self.username = try gpa.dupe(u8, data.username);
-    self.discriminator = try gpa.dupe(u8, data.discriminator);
+pub fn patch(self: *User, data: Data) !void {
+    self.context.allocator.free(self.username);
+    self.context.allocator.free(self.discriminator);
+    self.username = try self.context.allocator.dupe(u8, data.username);
+    self.discriminator = try self.context.allocator.dupe(u8, data.discriminator);
     self.bot.patch(data.bot);
     self.system.patch(data.system);
     self.mfa_enabled.patch(data.mfa_enabled);

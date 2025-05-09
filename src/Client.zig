@@ -5,8 +5,9 @@ const gateway_message = @import("gateway_message.zig");
 
 const Cache = @import("cache.zig").Cache;
 
-const User = @import("./structures/User.zig");
+const Channel = @import("structures/Channel.zig");
 const Message = @import("structures/Message.zig");
+const User = @import("structures/User.zig");
 
 const Client = @This();
 
@@ -38,8 +39,9 @@ pub const dispatch_event_map: std.StaticStringMap(Event.DispatchType) = .initCom
 });
 
 pub const GlobalCache = struct {
-    users: Cache(User, *GlobalCache),
-    messages: Cache(Message, *GlobalCache),
+    channels: Cache(Channel, *Client),
+    messages: Cache(Message, *Client),
+    users: Cache(User, *Client),
 };
 
 allocator: std.mem.Allocator,
@@ -52,8 +54,9 @@ pub fn init(options: InitOptions) !Client {
         .allocator = options.allocator,
         .maybe_gateway_client = null,
         .global_cache = .{
-            .users = .init(options.allocator),
+            .channels = .init(options.allocator),
             .messages = .init(options.allocator),
+            .users = .init(options.allocator),
         },
     };
 }
@@ -111,7 +114,7 @@ pub fn receive(self: *Client) !Event {
                         );
 
                         const user = try self.global_cache.users.patch(
-                            &self.global_cache,
+                            self,
                             try .resolve(ready_data.user.id),
                             ready_data.user,
                         );
@@ -134,7 +137,7 @@ pub fn receive(self: *Client) !Event {
                         );
 
                         const message = try self.global_cache.messages.patch(
-                            &self.global_cache,
+                            self,
                             try .resolve(message_data.inner_message.id),
                             message_data.inner_message,
                         );

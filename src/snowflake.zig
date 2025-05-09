@@ -3,6 +3,8 @@ const std = @import("std");
 pub const Snowflake = packed struct(u64) {
     pub const Int = u64;
 
+    pub const nil: Snowflake = @bitCast(@as(u64, 0));
+
     pub fn resolve(ref: anytype) !Snowflake {
         const ref_type = @TypeOf(ref);
         if (ref_type == Snowflake) return ref;

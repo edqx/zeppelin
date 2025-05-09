@@ -2,8 +2,9 @@ const std = @import("std");
 
 const Snowflake = @import("../snowflake.zig").Snowflake;
 const Queryable = @import("../queryable.zig").Queryable;
-const GlobalCache = @import("../Client.zig").GlobalCache;
+const Client = @import("../Client.zig");
 
+const Channel = @import("Channel.zig");
 const User = @import("User.zig");
 
 pub const Data = @import("../gateway_message.zig").Message;
@@ -68,23 +69,22 @@ pub const Flags = packed struct(i32) {
     _packed2: enum(u15) { unset } = .unset,
 };
 
+context: *Client,
 id: Snowflake,
-content: []const u8,
-author: *User,
+received: bool,
 
-pub fn init(self: *Message, comptime touch: bool) !void {
-    if (touch) @compileError("Cannot touch message");
+channel: *Channel = undefined,
+author: *User = undefined,
+content: []const u8 = "",
 
-    self.content = "";
-    self.author = undefined;
+pub fn deinit(self: *Message) void {
+    self.context.allocator.free(self.content);
 }
 
-pub fn deinit(self: *Message, gpa: std.mem.Allocator) void {
-    gpa.free(self.content);
-}
+pub fn patch(self: *Message, data: Data) !void {
+    self.context.allocator.free(self.content);
 
-pub fn patch(self: *Message, cache: *GlobalCache, gpa: std.mem.Allocator, data: Data) !void {
-    gpa.free(self.content);
-    self.content = try gpa.dupe(u8, data.content);
-    self.author = try cache.users.patch(cache, try .resolve(data.author.id), data.author);
+    self.channel = try self.context.global_cache.channels.touch(self.context, try .resolve(data.channel_id));
+    self.author = try self.context.global_cache.users.patch(self.context, try .resolve(data.author.id), data.author);
+    self.content = try self.context.allocator.dupe(u8, data.content);
 }

@@ -22,7 +22,7 @@ pub fn Cache(comptime Structure: type, comptime Context: type) type {
         pub fn deinit(self: *CacheT) void {
             var values = self.inner_map.valueIterator();
             while (values.next()) |val_ptr| {
-                val_ptr.*.deinit(self.allocator);
+                val_ptr.*.deinit();
             }
             self.inner_map.deinit(self.allocator);
             self.pool.deinit();
@@ -37,26 +37,24 @@ pub fn Cache(comptime Structure: type, comptime Context: type) type {
             return self.get(try Snowflake.resolve(ref));
         }
 
-        pub fn patch(self: *CacheT, context: Context, id: Snowflake, data: Structure.Data) !*Structure {
+        pub fn touch(self: *CacheT, context: Context, id: Snowflake) !*Structure {
             const get_result = try self.inner_map.getOrPut(self.allocator, id);
             if (!get_result.found_existing) {
                 get_result.value_ptr.* = try self.pool.create();
-                get_result.value_ptr.*.id = id;
-                try get_result.value_ptr.*.init(false);
+                get_result.value_ptr.*.* = .{
+                    .context = context,
+                    .id = id,
+                    .received = false,
+                };
             }
-            try get_result.value_ptr.*.patch(context, self.allocator, data);
-
             return get_result.value_ptr.*;
         }
 
-        pub fn touch(self: *CacheT, id: Snowflake) !*Structure {
-            const get_result = try self.inner_map.getOrPut(self.allocator, id);
-            if (!get_result.found_existing) {
-                get_result.value_ptr.* = try self.pool.create();
-                get_result.value_ptr.*.id = id;
-                try get_result.value_ptr.*.init(true);
-            }
-            return get_result.value_ptr.*;
+        pub fn patch(self: *CacheT, context: Context, id: Snowflake, data: Structure.Data) !*Structure {
+            const structure = try self.touch(context, id);
+            try structure.patch(data);
+            structure.received = true;
+            return structure;
         }
     };
 }
