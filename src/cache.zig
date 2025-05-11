@@ -44,7 +44,6 @@ pub fn Cache(comptime Structure: type, comptime Context: type) type {
                 get_result.value_ptr.*.* = .{
                     .context = context,
                     .id = id,
-                    .received = false,
                 };
             }
             return get_result.value_ptr.*;
@@ -53,7 +52,6 @@ pub fn Cache(comptime Structure: type, comptime Context: type) type {
         pub fn patch(self: *CacheT, context: Context, id: Snowflake, data: Structure.Data) !*Structure {
             const structure = try self.touch(context, id);
             try structure.patch(data);
-            structure.received = true;
             return structure;
         }
     };

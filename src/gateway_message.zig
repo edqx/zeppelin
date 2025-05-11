@@ -1,5 +1,22 @@
 const std = @import("std");
 
+pub fn Elective(comptime Inner: type) type {
+    return union(enum) {
+        not_given: void,
+        val: Inner,
+
+        pub fn jsonParseFromValue(
+            allocator: std.mem.Allocator,
+            source: std.json.Value,
+            options: std.json.ParseOptions,
+        ) !Elective(Inner) {
+            return .{
+                .val = try std.json.innerParseFromValue(Inner, allocator, source, options),
+            };
+        }
+    };
+}
+
 pub const opcode = struct {
     pub const Receive = enum(u32) {
         dispatch = 0,
@@ -77,8 +94,8 @@ pub fn Send(comptime Payload: type) type {
     return struct {
         op: i32,
         d: Payload,
-        s: ?i32 = null,
-        t: ?[]const u8 = null,
+        s: Elective(i32) = .not_given,
+        t: Elective([]const u8) = .not_given,
     };
 }
 
@@ -103,18 +120,18 @@ pub const User = struct {
     discriminator: []const u8,
     global_name: ?[]const u8,
     avatar: ?[]const u8,
-    bot: ?bool = null,
-    system: ?bool = null,
-    mfa_enabled: ?bool = null,
-    banner: ??[]const u8 = null,
-    accent_color: ??i32 = null,
-    locale: ?[]const u8 = null,
-    verified: ?bool = null,
-    email: ??[]const u8 = null,
-    flags: ?i32 = null,
-    premium_type: ?i32 = null,
-    public_flags: ?i32 = null,
-    avatar_decoration_data: ??AvatarDecorationData = null,
+    bot: Elective(bool) = .not_given,
+    system: Elective(bool) = .not_given,
+    mfa_enabled: Elective(bool) = .not_given,
+    banner: Elective(?[]const u8) = .not_given,
+    accent_color: Elective(?i32) = .not_given,
+    locale: Elective([]const u8) = .not_given,
+    verified: Elective(bool) = .not_given,
+    email: Elective(?[]const u8) = .not_given,
+    flags: Elective(i32) = .not_given,
+    premium_type: Elective(i32) = .not_given,
+    public_flags: Elective(i32) = .not_given,
+    avatar_decoration_data: Elective(?AvatarDecorationData) = .not_given,
 };
 
 pub const Role = std.json.Value; // TODO
@@ -134,17 +151,17 @@ pub const Guild = struct {
     id: Snowflake,
     name: []const u8,
     icon: ?[]const u8,
-    icon_hash: ??[]const u8 = null,
+    icon_hash: Elective(?[]const u8) = .not_given,
     splash: ?[]const u8,
     discovery_splash: ?[]const u8,
-    owner: ?bool = null,
+    owner: Elective(bool) = .not_given,
     owner_id: Snowflake,
-    permissions: ?[]const u8 = null,
-    region: ??[]const u8 = null,
+    permissions: Elective([]const u8) = .not_given,
+    region: Elective(?[]const u8) = .not_given,
     afk_channel_id: ?Snowflake,
     afk_timeout: i32,
-    widget_enabled: ?bool = null,
-    widget_channel_id: ??Snowflake = null,
+    widget_enabled: Elective(bool) = .not_given,
+    widget_channel_id: Elective(?Snowflake) = .not_given,
     verification_level: i32,
     default_message_notifications: i32,
     explicit_content_filter: i32,
@@ -156,8 +173,8 @@ pub const Guild = struct {
     system_channel_id: ?Snowflake,
     system_channel_flags: i32,
     rules_channel_id: ?Snowflake,
-    max_presences: ??i32 = null,
-    max_numbers: ??i32 = null,
+    max_presences: Elective(?i32) = .not_given,
+    max_numbers: Elective(?i32) = .not_given,
     vanity_url_code: ?[]const u8,
     description: ?[]const u8,
     banner: ?[]const u8,
@@ -165,13 +182,13 @@ pub const Guild = struct {
     premium_subscription_count: i32,
     preferred_locale: []const u8,
     public_updates_channel_id: ?Snowflake,
-    max_video_channel_users: ?i32 = null,
-    max_stage_video_channel_users: ?i32 = null,
-    approximate_member_count: ?i32 = null,
-    approximate_presence_count: ?i32 = null,
-    welcome_screen: ?WelcomeScreen = null,
+    max_video_channel_users: Elective(i32) = .not_given,
+    max_stage_video_channel_users: Elective(i32) = .not_given,
+    approximate_member_count: Elective(i32) = .not_given,
+    approximate_presence_count: Elective(i32) = .not_given,
+    welcome_screen: Elective(WelcomeScreen) = .not_given,
     nsfw_level: i32,
-    stickers: ?[]Sticker = null,
+    stickers: Elective([]Sticker) = .not_given,
     premium_progress_bar_enabled: bool,
     safety_alerts_channel_id: ?Snowflake,
     incidents_data: ?IncidentsData,
@@ -199,11 +216,11 @@ pub const Channel = struct {
     };
 
     pub const ThreadMember = struct {
-        id: ?Snowflake = null,
-        user_id: ?Snowflake = null,
+        id: Elective(Snowflake) = .not_given,
+        user_id: Elective(Snowflake) = .not_given,
         join_timestamp: Iso8601Timestamp,
         flags: i32,
-        member: ?Guild.Member = null,
+        member: Elective(Guild.Member) = .not_given,
     };
 
     pub const ForumTag = struct {
@@ -216,39 +233,39 @@ pub const Channel = struct {
 
     id: Snowflake,
     type: i32,
-    guild_id: ?Snowflake = null,
-    position: ?i32 = null,
-    permission_overwrites: ?[]Permission.Overwrite = null,
-    name: ??[]const u8 = null,
-    topic: ??[]const u8 = null,
-    nsfw: ?bool = null,
-    last_message_id: ??Snowflake = null,
-    bitrate: ?i32 = null,
-    user_limit: ?i32 = null,
-    rate_limit_per_user: ?i32 = null,
-    recipients: ?[]User = null,
-    icon: ??[]const u8 = null,
-    owner_id: ?Snowflake = null,
-    application_id: ?Snowflake = null,
-    managed: ?bool = null,
-    parent_id: ??Snowflake = null,
-    last_pin_timestamp: ??Iso8601Timestamp = null,
-    rtc_region: ??[]const u8 = null,
-    video_quality_mode: ?i32 = null,
-    message_count: ?i32 = null,
-    member_count: ?i32 = null,
-    thread_metadata: ?ThreadMetadata = null,
-    member: ?ThreadMember = null,
-    default_auto_archive_duration: ?i32 = null,
-    permissions: ?[]const u8 = null,
-    flags: ?i32 = null,
-    total_message_sent: ?i32 = null,
-    available_tags: ?[]ForumTag = null,
-    applied_tags: ?[]Snowflake = null,
-    default_reaction_emoji: ??Reaction.Default = null,
-    default_thread_rate_limit_per_user: ?i32 = null,
-    default_sort_order: ??i32 = null,
-    default_forum_layout: ?i32 = null,
+    guild_id: Elective(Snowflake) = .not_given,
+    position: Elective(i32) = .not_given,
+    permission_overwrites: Elective([]Permission.Overwrite) = .not_given,
+    name: Elective(?[]const u8) = .not_given,
+    topic: Elective(?[]const u8) = .not_given,
+    nsfw: Elective(bool) = .not_given,
+    last_message_id: Elective(?Snowflake) = .not_given,
+    bitrate: Elective(i32) = .not_given,
+    user_limit: Elective(i32) = .not_given,
+    rate_limit_per_user: Elective(i32) = .not_given,
+    recipients: Elective([]User) = .not_given,
+    icon: Elective(?[]const u8) = .not_given,
+    owner_id: Elective(Snowflake) = .not_given,
+    application_id: Elective(Snowflake) = .not_given,
+    managed: Elective(bool) = .not_given,
+    parent_id: Elective(?Snowflake) = .not_given,
+    last_pin_timestamp: Elective(?Iso8601Timestamp) = .not_given,
+    rtc_region: Elective(?[]const u8) = .not_given,
+    video_quality_mode: Elective(i32) = .not_given,
+    message_count: Elective(i32) = .not_given,
+    member_count: Elective(i32) = .not_given,
+    thread_metadata: Elective(ThreadMetadata) = .not_given,
+    member: Elective(ThreadMember) = .not_given,
+    default_auto_archive_duration: Elective(i32) = .not_given,
+    permissions: Elective([]const u8) = .not_given,
+    flags: Elective(i32) = .not_given,
+    total_message_sent: Elective(i32) = .not_given,
+    available_tags: Elective([]ForumTag) = .not_given,
+    applied_tags: Elective([]Snowflake) = .not_given,
+    default_reaction_emoji: Elective(?Reaction.Default) = .not_given,
+    default_thread_rate_limit_per_user: Elective(i32) = .not_given,
+    default_sort_order: Elective(?i32) = .not_given,
+    default_forum_layout: Elective(i32) = .not_given,
 };
 
 pub const Attachment = std.json.Value; // TODO
@@ -271,7 +288,7 @@ pub const Message = struct {
     pub const Activity = struct {
         type: i32,
 
-        party_id: ?[]const u8 = null,
+        party_id: Elective([]const u8) = .not_given,
     };
 
     pub const Reference = std.json.Value; // TODO
@@ -293,31 +310,31 @@ pub const Message = struct {
     mention_everyone: bool,
     mentions: []User,
     mention_roles: []Role,
-    mention_channels: ?[]Channel.Mention = null,
+    mention_channels: Elective([]Channel.Mention) = .not_given,
     attachments: []Attachment,
     embeds: []Embed,
-    reactions: ?[]Reaction = null,
-    nonce: ?std.json.Value = null,
+    reactions: Elective([]Reaction) = .not_given,
+    nonce: Elective(std.json.Value) = .not_given,
     pinned: bool,
-    webhook_id: ?Snowflake = null,
+    webhook_id: Elective(Snowflake) = .not_given,
     type: Type,
-    activity: ?Activity = null,
-    application: ?Application = null, // TODO: only a 'partial' application
-    application_id: ?Snowflake = null,
-    flags: ?i32 = null,
-    message_reference: ?Reference = null,
-    message_snapshots: ?[]Snapshot = null,
-    referenced_message: ??*Message = null,
-    interaction_metadata: ?InteractionMetadata = null,
-    thread: ?Channel = null,
-    components: ?[]Component = null,
-    sticker_items: ?[]StickerItem = null,
-    stickers: ?[]Sticker = null,
-    position: ?i32 = null,
-    role_subscription_data: ?RoleSubscriptionData = null,
-    resolved: ?Resolved = null,
-    poll: ?Poll = null,
-    call: ?Call = null,
+    activity: Elective(Activity) = .not_given,
+    application: Elective(Application) = .not_given, // TODO: only a 'partial' application
+    application_id: Elective(Snowflake) = .not_given,
+    flags: Elective(i32) = .not_given,
+    message_reference: Elective(Reference) = .not_given,
+    message_snapshots: Elective([]Snapshot) = .not_given,
+    referenced_message: Elective(?*Message) = .not_given,
+    interaction_metadata: Elective(InteractionMetadata) = .not_given,
+    thread: Elective(Channel) = .not_given,
+    components: Elective([]Component) = .not_given,
+    sticker_items: Elective([]StickerItem) = .not_given,
+    stickers: Elective([]Sticker) = .not_given,
+    position: Elective(i32) = .not_given,
+    role_subscription_data: Elective(RoleSubscriptionData) = .not_given,
+    resolved: Elective(Resolved) = .not_given,
+    poll: Elective(Poll) = .not_given,
+    call: Elective(Call) = .not_given,
 };
 
 pub const payload = struct {
@@ -334,9 +351,9 @@ pub const payload = struct {
 
         token: []const u8,
         properties: Properties,
-        compress: ?bool = null,
-        large_threshold: ?i32 = null,
-        shard: ?Sharding = null,
+        compress: Elective(bool) = .not_given,
+        large_threshold: Elective(i32) = .not_given,
+        shard: Elective(Sharding) = .not_given,
         // presence: Presence, TODO
         intents: i32,
 
@@ -346,20 +363,29 @@ pub const payload = struct {
             try jw.write(self.token);
             try jw.objectField("properties");
             try jw.write(self.properties);
-            if (self.compress) |compress| {
-                try jw.objectField("compress");
-                try jw.write(compress);
+            switch (self.compress) {
+                .not_given => {},
+                .val => |compress| {
+                    try jw.objectField("compress");
+                    try jw.write(compress);
+                },
             }
-            if (self.large_threshold) |large_threshold| {
-                try jw.objectField("large_threshold");
-                try jw.write(large_threshold);
+            switch (self.large_threshold) {
+                .not_given => {},
+                .val => |large_threshold| {
+                    try jw.objectField("large_threshold");
+                    try jw.write(large_threshold);
+                },
             }
-            if (self.shard) |sharding| {
-                try jw.objectField("shard");
-                try jw.beginArray();
-                try jw.write(sharding.shard_id);
-                try jw.write(sharding.num_shards);
-                try jw.endArray();
+            switch (self.shard) {
+                .not_given => {},
+                .val => |sharding| {
+                    try jw.objectField("shard");
+                    try jw.beginArray();
+                    try jw.write(sharding.shard_id);
+                    try jw.write(sharding.num_shards);
+                    try jw.endArray();
+                },
             }
             try jw.objectField("intents");
             try jw.write(self.intents);
@@ -373,7 +399,7 @@ pub const payload = struct {
         guilds: []Guild.Unavailable,
         session_id: []const u8,
         resume_gateway_url: []const u8,
-        shard: ?Sharding = null,
+        shard: Elective(Sharding) = .not_given,
         application: struct {
             id: Snowflake,
             flags: i32,
@@ -385,7 +411,7 @@ pub const payload = struct {
             pub const Extra = struct {
                 joined_at: Iso8601Timestamp,
                 large: bool,
-                unavailable: ?bool = null,
+                unavailable: Elective(bool) = .not_given,
                 member_count: i32,
                 voice_states: []std.json.Value, // TODO
                 members: []Guild.Member,
@@ -428,8 +454,8 @@ pub const payload = struct {
 
     pub const MessageCreate = struct {
         pub const Extra = struct {
-            guild_id: ?Snowflake = null,
-            member: ?std.json.Value = null, // TODO: contains partial member
+            guild_id: Elective(Snowflake) = .not_given,
+            member: Elective(std.json.Value) = .not_given, // TODO: contains partial member
             mentions: []User, // TODO: each user also contains a 'member' field containing a partial guild member
         };
 

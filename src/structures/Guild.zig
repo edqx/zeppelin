@@ -1,7 +1,7 @@
 const std = @import("std");
 
 const Snowflake = @import("../snowflake.zig").Snowflake;
-const Queryable = @import("../queryable.zig").Queryable;
+const QueriedFields = @import("../queryable.zig").QueriedFields;
 const Client = @import("../Client.zig");
 
 const Channel = @import("Channel.zig");
@@ -18,13 +18,16 @@ pub const Data = union(enum) {
 
 const Guild = @This();
 
+meta: QueriedFields(Guild, .{
+    "available", "name", "channels",
+}) = .none,
+
 context: *Client,
 id: Snowflake,
-received: bool,
 
 available: bool = false,
 name: []const u8 = "",
-channels: Queryable([]*Channel) = .unknown,
+channels: []*Channel = &.{},
 
 pub fn deinit(self: *Guild) void {
     const allocator = self.context.allocator;
@@ -50,17 +53,19 @@ pub fn patch(self: *Guild, data: Data) !void {
                 for (channnels_data) |channel_data| {
                     var modified_data = channel_data;
 
-                    modified_data.guild_id = inner_data.base.id; // guild.channels don't have the guild id with them
+                    modified_data.guild_id = .{ .val = inner_data.base.id }; // guild.channels don't have the guild id with them
+
                     channel_references.appendAssumeCapacity(
                         try self.context.global_cache.channels.patch(self.context, try .resolve(modified_data.id), modified_data),
                     );
                 }
 
-                self.channels = .{ .known = try channel_references.toOwnedSlice(allocator) };
-            } else {
-                self.channels = .unknown;
+                self.meta.patch(.channels, try channel_references.toOwnedSlice(allocator));
             }
         },
-        .unavailable => {},
+        .unavailable => {
+            self.meta = .none;
+            self.available = false;
+        },
     }
 }

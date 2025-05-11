@@ -1,7 +1,7 @@
 const std = @import("std");
 
 const Snowflake = @import("../snowflake.zig").Snowflake;
-const Queryable = @import("../queryable.zig").Queryable;
+const QueriedFields = @import("../queryable.zig").QueriedFields;
 const Client = @import("../Client.zig");
 
 const Channel = @import("Channel.zig");
@@ -69,22 +69,29 @@ pub const Flags = packed struct(i32) {
     _packed2: enum(u15) { unset } = .unset,
 };
 
+meta: QueriedFields(Message, .{
+    "channel", "author", "content",
+}) = .none,
+
 context: *Client,
 id: Snowflake,
-received: bool,
 
 channel: *Channel = undefined,
 author: *User = undefined,
 content: []const u8 = "",
 
 pub fn deinit(self: *Message) void {
-    self.context.allocator.free(self.content);
+    const allocator = self.context.allocator;
+    allocator.free(self.content);
 }
 
 pub fn patch(self: *Message, data: Data) !void {
-    self.context.allocator.free(self.content);
+    const global_cache = &self.context.global_cache;
+    const allocator = self.context.allocator;
 
-    self.channel = try self.context.global_cache.channels.touch(self.context, try .resolve(data.channel_id));
-    self.author = try self.context.global_cache.users.patch(self.context, try .resolve(data.author.id), data.author);
-    self.content = try self.context.allocator.dupe(u8, data.content);
+    self.meta.patch(.channel, try global_cache.channels.touch(self.context, try .resolve(data.channel_id)));
+    self.meta.patch(.author, try global_cache.users.patch(self.context, try .resolve(data.author.id), data.author));
+
+    allocator.free(self.content);
+    self.meta.patch(.content, try allocator.dupe(u8, data.content));
 }

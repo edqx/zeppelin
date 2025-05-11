@@ -11,6 +11,8 @@ const Handler = struct {
     pub fn ready(self: *Handler, ready_event: zeppelin.Event.Ready) !void {
         const cached_user = self.client.global_cache.users.resolve(ready_event.user.id).?;
 
+        if (cached_user.meta.complete()) {}
+
         std.log.info("Logged in as {s}", .{cached_user.username});
     }
 
@@ -19,12 +21,10 @@ const Handler = struct {
 
         const message = message_create_event.message;
 
-        std.log.info("'{s}' from {s} in {s} in guild {s} which has {} channels", .{
+        std.log.info("'{s}' from {s} in {}", .{
             message.content,
             message.author.username,
-            message.channel.name.?.known.?,
-            message.channel.guild.?.known.name,
-            message.channel.guild.?.known.channels.known.len,
+            std.meta.activeTag(message.channel.inner),
         });
     }
 };
