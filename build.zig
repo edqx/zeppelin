@@ -27,5 +27,9 @@ pub fn build(b: *std.Build) void {
         .root_module = example_mod,
     });
 
+    if (optimize == .ReleaseFast or optimize == .ReleaseSmall) {
+        example_exe.linkLibC();
+    }
+
     b.installArtifact(example_exe);
 }

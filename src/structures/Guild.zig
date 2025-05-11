@@ -18,7 +18,7 @@ pub const Data = union(enum) {
 
 const Guild = @This();
 
-meta: QueriedFields(Guild, .{
+meta: QueriedFields(Guild, &.{
     "available", "name", "channels",
 }) = .none,
 

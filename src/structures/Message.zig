@@ -69,7 +69,7 @@ pub const Flags = packed struct(i32) {
     _packed2: enum(u15) { unset } = .unset,
 };
 
-meta: QueriedFields(Message, .{
+meta: QueriedFields(Message, &.{
     "channel", "author", "content",
 }) = .none,
 

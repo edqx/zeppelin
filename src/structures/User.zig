@@ -13,7 +13,7 @@ const AvatarDecorationData = struct {
     sku_id: Snowflake,
 };
 
-meta: QueriedFields(User, .{
+meta: QueriedFields(User, &.{
     "username",               "discriminator", "global_name",
     "avatar",                 "bot",           "system",
     "mfa_enabled",            "banner",        "accent_color",
@@ -47,22 +47,50 @@ pub fn deinit(self: *User) void {
 
     allocator.free(self.username);
     allocator.free(self.discriminator);
+
+    if (self.global_name) |global_name| allocator.free(global_name);
 }
 
 pub fn patch(self: *User, data: Data) !void {
-    if (self.meta.queried(.username)) self.context.allocator.free(self.username);
-    self.meta.patch(.username, try self.context.allocator.dupe(u8, data.username));
-    if (self.meta.queried(.discriminator)) self.context.allocator.free(self.discriminator);
-    self.meta.patch(.discriminator, try self.context.allocator.dupe(u8, data.discriminator));
+    const allocator = self.context.allocator;
+
+    allocator.free(self.username);
+    self.meta.patch(.username, try allocator.dupe(u8, data.username));
+    allocator.free(self.discriminator);
+    self.meta.patch(.discriminator, try allocator.dupe(u8, data.discriminator));
+
+    if (data.global_name) |data_global_name| {
+        if (self.global_name) |global_name| allocator.free(global_name);
+
+        self.meta.patch(.global_name, try allocator.dupe(u8, data_global_name));
+    }
 
     self.meta.patchElective(.bot, data.bot);
     self.meta.patchElective(.system, data.system);
     self.meta.patchElective(.mfa_enabled, data.mfa_enabled);
     self.meta.patchElective(.banner, data.banner);
     self.meta.patchElective(.accent_color, data.accent_color);
+
+    switch (data.locale) {
+        .not_given => {},
+        .val => |locale| {
+            allocator.free(self.locale);
+            self.meta.patch(.locale, try allocator.dupe(u8, locale));
+        },
+    }
+
     self.meta.patchElective(.locale, data.locale);
     self.meta.patchElective(.verified, data.verified);
-    self.meta.patchElective(.email, data.email);
+
+    switch (data.email) {
+        .not_given => {},
+        .val => |maybe_email| {
+            if (self.email) |email| allocator.free(email);
+
+            self.meta.patch(.email, if (maybe_email) |data_email| try allocator.dupe(u8, data_email) else null);
+        },
+    }
+
     self.meta.patchElective(.flags, data.flags);
 
     switch (data.avatar_decoration_data) {

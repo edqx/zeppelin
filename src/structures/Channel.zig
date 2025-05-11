@@ -13,7 +13,8 @@ pub const Data = @import("../gateway_message.zig").Channel;
 const Channel = @This();
 
 pub const Type = enum(i32) {
-    guild_text,
+    unknown = -1,
+    guild_text = 0,
     dm,
     guild_voice,
     group_dm,
@@ -30,30 +31,70 @@ pub const Type = enum(i32) {
 
 pub const PermissionOverwrite = struct {};
 
+pub fn AnyChannel(comptime used_fields: []const [:0]const u8) type {
+    return struct {
+        inline fn hasField(field: []const u8) bool {
+            return comptime for (used_fields) |used_field| {
+                if (std.mem.eql(u8, used_field, field)) break true;
+            } else false;
+        }
+
+        const AnyChannelT = @This();
+
+        context: *Client,
+
+        meta: QueriedFields(AnyChannelT, used_fields) = .none,
+
+        guild_id: if (hasField("guild_id")) Snowflake else void = if (hasField("guild_id")) .nil else {},
+        name: if (hasField("name")) ?[]const u8 else void = if (hasField("name")) null else {},
+
+        pub fn deinit(self: *AnyChannelT) void {
+            const allocator = self.context.allocator;
+
+            if (hasField("name")) if (self.name) |name| allocator.free(name);
+        }
+
+        pub fn patch(self: *AnyChannelT, data: Data) !void {
+            const allocator = self.context.allocator;
+
+            if (hasField("name")) {
+                switch (data.name) {
+                    .not_given => {},
+                    .val => |maybe_name| {
+                        if (self.name) |name| allocator.free(name);
+                        self.meta.patch(.name, if (maybe_name) |data_name| try allocator.dupe(u8, data_name) else null);
+                    },
+                }
+            }
+        }
+    };
+}
+
 pub const Inner = union(Type) {
-    guild_text: struct {},
-    dm: struct {},
-    guild_voice: struct {},
-    group_dm: struct {},
-    guild_category: struct {},
-    guild_announcement: struct {},
-    announcement_thread: struct {},
-    public_thread: struct {},
-    private_thread: struct {},
-    guild_stage_voice: struct {},
-    guild_directory: struct {},
-    guild_forum: struct {},
-    guild_media: struct {},
+    unknown: void,
+    guild_text: AnyChannel(&.{ "guild_id", "name" }),
+    dm: AnyChannel(&.{}),
+    guild_voice: AnyChannel(&.{ "guild_id", "name" }),
+    group_dm: AnyChannel(&.{"name"}),
+    guild_category: AnyChannel(&.{ "guild_id", "name" }),
+    guild_announcement: AnyChannel(&.{ "guild_id", "name" }),
+    announcement_thread: AnyChannel(&.{ "guild_id", "name" }),
+    public_thread: AnyChannel(&.{ "guild_id", "name" }),
+    private_thread: AnyChannel(&.{ "guild_id", "name" }),
+    guild_stage_voice: AnyChannel(&.{ "guild_id", "name" }),
+    guild_directory: AnyChannel(&.{ "guild_id", "name" }),
+    guild_forum: AnyChannel(&.{ "guild_id", "name" }),
+    guild_media: AnyChannel(&.{ "guild_id", "name" }),
 };
 
-meta: QueriedFields(Channel, .{
+meta: QueriedFields(Channel, &.{
     "inner",
 }) = .none,
 
 context: *Client,
 id: Snowflake,
 
-inner: Inner = .{ .guild_text = .{} },
+inner: Inner = .unknown,
 
 pub fn deinit(self: *Channel) void {
     _ = self;
@@ -61,9 +102,17 @@ pub fn deinit(self: *Channel) void {
 
 pub fn patch(self: *Channel, data: Data) !void {
     const @"type" = @as(Type, @enumFromInt(data.type));
-    const inner = switch (@"type") {
-        inline else => |tag| @unionInit(Inner, @tagName(tag), .{}),
+    var inner = switch (@"type") {
+        .unknown => unreachable,
+        inline else => |tag| @unionInit(Inner, @tagName(tag), .{
+            .context = self.context,
+        }),
     };
+
+    switch (inner) {
+        .unknown => unreachable,
+        inline else => |*any_channel| try any_channel.patch(data),
+    }
 
     self.meta.patch(.inner, inner);
 }
