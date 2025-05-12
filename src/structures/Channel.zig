@@ -78,20 +78,23 @@ pub fn AnyChannel(comptime used_fields: []const [:0]const u8) type {
 }
 
 pub const Inner = union(Type) {
+    const in_guild: []const [:0]const u8 = &.{"guild"};
+    const has_name: []const [:0]const u8 = &.{"name"};
+
     unknown: void,
-    guild_text: AnyChannel(&.{ "guild", "name" }),
+    guild_text: AnyChannel(in_guild ++ has_name),
     dm: AnyChannel(&.{}),
-    guild_voice: AnyChannel(&.{ "guild", "name" }),
-    group_dm: AnyChannel(&.{"name"}),
-    guild_category: AnyChannel(&.{ "guild", "name" }),
-    guild_announcement: AnyChannel(&.{ "guild", "name" }),
-    announcement_thread: AnyChannel(&.{ "guild", "name" }),
-    public_thread: AnyChannel(&.{ "guild", "name" }),
-    private_thread: AnyChannel(&.{ "guild", "name" }),
-    guild_stage_voice: AnyChannel(&.{ "guild", "name" }),
-    guild_directory: AnyChannel(&.{ "guild", "name" }),
-    guild_forum: AnyChannel(&.{ "guild", "name" }),
-    guild_media: AnyChannel(&.{ "guild", "name" }),
+    guild_voice: AnyChannel(in_guild ++ has_name),
+    group_dm: AnyChannel(has_name),
+    guild_category: AnyChannel(in_guild ++ has_name),
+    guild_announcement: AnyChannel(in_guild ++ has_name),
+    announcement_thread: AnyChannel(in_guild ++ has_name),
+    public_thread: AnyChannel(in_guild ++ has_name),
+    private_thread: AnyChannel(in_guild ++ has_name),
+    guild_stage_voice: AnyChannel(in_guild ++ has_name),
+    guild_directory: AnyChannel(in_guild ++ has_name),
+    guild_forum: AnyChannel(in_guild ++ has_name),
+    guild_media: AnyChannel(in_guild ++ has_name),
 };
 
 meta: QueriedFields(Channel, &.{
