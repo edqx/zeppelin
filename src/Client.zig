@@ -3,7 +3,10 @@ const websocket = @import("websocket");
 const gateway = @import("gateway.zig");
 const gateway_message = @import("gateway_message.zig");
 
+const Authentication = @import("authentication.zig").Authentication;
 const Cache = @import("cache.zig").Cache;
+
+const Rest = @import("Rest.zig");
 
 const Channel = @import("structures/Channel.zig");
 const Guild = @import("structures/Guild.zig");
@@ -11,10 +14,6 @@ const Message = @import("structures/Message.zig");
 const User = @import("structures/User.zig");
 
 const Client = @This();
-
-pub const InitOptions = struct {
-    allocator: std.mem.Allocator,
-};
 
 pub const Event = union(enum) {
     pub const DispatchType = enum {
@@ -53,8 +52,15 @@ pub const GlobalCache = struct {
     users: Cache(User, *Client),
 };
 
+pub const InitOptions = struct {
+    allocator: std.mem.Allocator,
+    authentication: Authentication,
+};
+
 allocator: std.mem.Allocator,
 maybe_gateway_client: ?gateway.Client,
+
+rest_client: Rest,
 
 global_cache: GlobalCache,
 
@@ -62,6 +68,7 @@ pub fn init(options: InitOptions) !Client {
     return .{
         .allocator = options.allocator,
         .maybe_gateway_client = null,
+        .rest_client = .init(options.allocator, options.authentication),
         .global_cache = .{
             .channels = .init(options.allocator),
             .guilds = .init(options.allocator),
@@ -77,6 +84,7 @@ pub fn deinit(self: *Client) void {
     }
     self.global_cache.users.deinit();
     self.global_cache.messages.deinit();
+    self.rest_client.deinit();
 }
 
 pub fn connected(self: *Client) bool {
@@ -91,10 +99,10 @@ pub fn disconnect(self: *Client) !void {
     self.maybe_gateway_client = null;
 }
 
-pub fn connectAndLogin(self: *Client, token: []const u8, options: gateway.Options) !void {
+pub fn connectAndLogin(self: *Client, options: gateway.Options) !void {
     if (self.maybe_gateway_client != null) return error.Connected;
 
-    self.maybe_gateway_client = try gateway.Client.init(self.allocator, token, options);
+    self.maybe_gateway_client = try gateway.Client.init(self.allocator, self.rest_client.authentication.resolve(), options);
     try self.maybe_gateway_client.?.connectAndAuthenticate();
 }
 

@@ -4,6 +4,8 @@ const Snowflake = @import("../snowflake.zig").Snowflake;
 const QueriedFields = @import("../queryable.zig").QueriedFields;
 const Client = @import("../Client.zig");
 
+const gateway_message = @import("../gateway_message.zig");
+
 const Guild = @import("Guild.zig");
 const Message = @import("Message.zig");
 const User = @import("User.zig");
@@ -45,6 +47,7 @@ pub fn AnyChannel(comptime used_fields: []const [:0]const u8) type {
 
         meta: QueriedFields(AnyChannelT, used_fields) = .none,
 
+        id: Snowflake,
         guild: if (hasField("guild")) *Guild else void = if (hasField("guild")) undefined else {},
         name: if (hasField("name")) ?[]const u8 else void = if (hasField("name")) null else {},
 
@@ -73,6 +76,33 @@ pub fn AnyChannel(comptime used_fields: []const [:0]const u8) type {
                     },
                 }
             }
+        }
+
+        pub fn createMessage(self: *AnyChannelT, content: []const u8) !*Message {
+            const url = try std.fmt.allocPrint(self.context.allocator, "https://discord.com/api/v10/channels/{}/messages", .{self.id});
+            defer self.context.allocator.free(url);
+
+            var req = try self.context.rest_client.create(.POST, try std.Uri.parse(url));
+            defer req.deinit();
+
+            try req.begin("application/json");
+
+            var json_writer = std.json.writeStream(req.writer(), .{});
+            defer json_writer.deinit();
+
+            try json_writer.beginObject();
+
+            try json_writer.objectField("content");
+            try json_writer.write(content);
+
+            try json_writer.endObject();
+
+            var arena: std.heap.ArenaAllocator = .init(self.context.allocator);
+            defer arena.deinit();
+
+            const message_response = try req.fetchJson(arena.allocator(), gateway_message.Message);
+
+            return try self.context.global_cache.messages.patch(self.context, try .resolve(message_response.id), message_response);
         }
     };
 }
@@ -116,6 +146,7 @@ pub fn patch(self: *Channel, data: Data) !void {
         .unknown => unreachable,
         inline else => |tag| @unionInit(Inner, @tagName(tag), .{
             .context = self.context,
+            .id = self.id,
         }),
     };
 

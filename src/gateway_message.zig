@@ -5,6 +5,16 @@ pub fn Elective(comptime Inner: type) type {
         not_given: void,
         val: Inner,
 
+        pub fn jsonParse(
+            allocator: std.mem.Allocator,
+            source: anytype,
+            options: std.json.ParseOptions,
+        ) !Elective(Inner) {
+            return .{
+                .val = try std.json.innerParse(Inner, allocator, source, options),
+            };
+        }
+
         pub fn jsonParseFromValue(
             allocator: std.mem.Allocator,
             source: std.json.Value,
@@ -276,7 +286,12 @@ pub const Reaction = struct {
         emoji_name: ?[]const u8,
     };
 
-    // TODO
+    count: i32,
+    count_details: std.json.Value, //TODO
+    me: bool,
+    me_burst: bool,
+    emoji: Emoji, // TOOD: partial emoji
+    burst_colors: std.json.Value,
 };
 
 pub const Sticker = std.json.Value; // TODO

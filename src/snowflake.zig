@@ -20,4 +20,8 @@ pub const Snowflake = packed struct(u64) {
     internal_process_id: u5,
     internal_worker_id: u5,
     timestamp: u42,
+
+    pub fn format(self: Snowflake, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        try writer.print("{}", .{@as(Int, @bitCast(self))});
+    }
 };

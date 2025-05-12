@@ -8,25 +8,22 @@ const use_gpa = builtin.mode == .Debug or builtin.mode == .ReleaseSafe;
 const Handler = struct {
     client: *zeppelin.Client,
 
+    own_user: *zeppelin.User,
+
     pub fn ready(self: *Handler, ready_event: zeppelin.Event.Ready) !void {
-        const cached_user = self.client.global_cache.users.resolve(ready_event.user.id).?;
+        self.own_user = ready_event.user;
 
-        if (cached_user.meta.complete()) {}
-
-        std.log.info("Logged in as {s}", .{cached_user.username});
+        std.log.info("Logged in as {s}", .{self.own_user.username});
     }
 
     pub fn messageCreate(self: *Handler, message_create_event: zeppelin.Event.MessageCreate) !void {
-        _ = self;
+        if (self.own_user.id == message_create_event.message.author.id) return;
 
         const message = message_create_event.message;
 
-        std.log.info("'{s}' from {s} in {?s} in {s}", .{
-            message.content,
-            message.author.username,
-            message.channel.inner.guild_text.name,
-            message.channel.inner.guild_text.guild.name,
-        });
+        try self.client.createMessage(message.channel.id, "peace for all womankind");
+
+        _ = try message.channel.inner.guild_text.createMessage("peace for all womankind");
     }
 };
 
@@ -42,14 +39,15 @@ pub fn main() !void {
     const token = env_map.get("ZEPPELIN_TOKEN") orelse @panic("Missing environment variable ZEPPELIN_TOKEN");
     var client: zeppelin.Client = try .init(.{
         .allocator = allocator,
+        .authentication = .{ .token = token },
     });
     defer client.deinit();
 
-    try client.connectAndLogin(token, .{
+    try client.connectAndLogin(.{
         .intents = .all,
     });
 
-    var handler: Handler = .{ .client = &client };
+    var handler: Handler = .{ .client = &client, .own_user = undefined };
     _ = &handler;
 
     var event_pool: zeppelin.EventPool(Handler) = .{
