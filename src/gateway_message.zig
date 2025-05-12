@@ -144,7 +144,30 @@ pub const User = struct {
     avatar_decoration_data: Elective(?AvatarDecorationData) = .not_given,
 };
 
-pub const Role = std.json.Value; // TODO
+pub const Role = struct {
+    pub const Tag = struct {
+        bot_id: Elective(Snowflake) = .not_given,
+        integration_id: Elective(Snowflake) = .not_given,
+        premium_subscriber: Elective(?bool) = .not_given,
+        subscription_listing_id: Elective(Snowflake) = .not_given,
+        available_for_purchase: Elective(?bool) = .not_given,
+        guild_connections: Elective(?bool) = .not_given,
+    };
+
+    id: Snowflake,
+    name: []const u8,
+    color: i32,
+    hoist: bool,
+    icon: Elective(?[]const u8) = .not_given,
+    unicode_emoji: Elective(?[]const u8) = .not_given,
+    position: i32,
+    permissions: []const u8,
+    managed: bool,
+    mentionable: bool,
+    tags: Elective(Tag) = .not_given,
+    flags: i32,
+};
+
 pub const Emoji = std.json.Value; // TODO
 
 pub const Guild = struct {
@@ -153,8 +176,24 @@ pub const Guild = struct {
         unavailable: bool,
     };
 
+    pub const Member = struct {
+        user: Elective(User) = .not_given,
+        nick: Elective(?[]const u8) = .not_given,
+        avatar: Elective(?[]const u8) = .not_given,
+        banner: Elective(?[]const u8) = .not_given,
+        roles: []Snowflake,
+        joined_at: Iso8601Timestamp,
+        premium_since: Elective(?Iso8601Timestamp) = .not_given,
+        deaf: bool,
+        mute: bool,
+        flags: i32,
+        pending: Elective(bool) = .not_given,
+        permissions: Elective([]const u8) = .not_given,
+        communication_disabled_util: Elective(?Iso8601Timestamp) = .not_given,
+        avatar_decoration_data: Elective(?AvatarDecorationData) = .not_given,
+    };
+
     pub const Feature = std.json.Value; // TODO
-    pub const Member = std.json.Value; // TODO
     pub const WelcomeScreen = std.json.Value; // TODO
     pub const IncidentsData = std.json.Value; // TODO
 
@@ -470,7 +509,7 @@ pub const payload = struct {
     pub const MessageCreate = struct {
         pub const Extra = struct {
             guild_id: Elective(Snowflake) = .not_given,
-            member: Elective(std.json.Value) = .not_given, // TODO: contains partial member
+            member: Elective(Guild.Member) = .not_given,
             mentions: []User, // TODO: each user also contains a 'member' field containing a partial guild member
         };
 

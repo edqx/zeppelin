@@ -45,6 +45,9 @@ pub fn Cache(comptime Structure: type, comptime Context: type) type {
                     .context = context,
                     .id = id,
                 };
+                if (@hasDecl(Structure, "init")) {
+                    get_result.value_ptr.*.init();
+                }
             }
             return get_result.value_ptr.*;
         }

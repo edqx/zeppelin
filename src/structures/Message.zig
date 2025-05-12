@@ -5,9 +5,17 @@ const QueriedFields = @import("../queryable.zig").QueriedFields;
 const Client = @import("../Client.zig");
 
 const Channel = @import("Channel.zig");
+const Guild = @import("Guild.zig");
 const User = @import("User.zig");
 
-pub const Data = @import("../gateway_message.zig").Message;
+const gateway_message = @import("../gateway_message.zig");
+
+pub const Data = struct {
+    base: gateway_message.Message,
+    guild_id: ?gateway_message.Snowflake,
+    member: ?gateway_message.Guild.Member,
+    mentions: ?[]gateway_message.User,
+};
 
 const Message = @This();
 
@@ -70,14 +78,17 @@ pub const Flags = packed struct(i32) {
 };
 
 meta: QueriedFields(Message, &.{
-    "channel", "author", "content",
+    "guild",  "channel", "author",
+    "member", "content",
 }) = .none,
 
 context: *Client,
 id: Snowflake,
 
+guild: *Guild = undefined,
 channel: *Channel = undefined,
 author: *User = undefined,
+member: *Guild.Member = undefined,
 content: []const u8 = "",
 
 pub fn deinit(self: *Message) void {
@@ -89,9 +100,19 @@ pub fn patch(self: *Message, data: Data) !void {
     const global_cache = &self.context.global_cache;
     const allocator = self.context.allocator;
 
-    self.meta.patch(.channel, try global_cache.channels.touch(self.context, try .resolve(data.channel_id)));
-    self.meta.patch(.author, try global_cache.users.patch(self.context, try .resolve(data.author.id), data.author));
+    if (data.guild_id) |guild_id| {
+        const guild = try global_cache.guilds.touch(self.context, try .resolve(guild_id));
+        self.meta.patch(.guild, guild);
+
+        if (data.member) |data_member| {
+            const member = try guild.members.patch(guild, try .resolve(data.base.author.id), data_member);
+            self.meta.patch(.member, member);
+        }
+    }
+
+    self.meta.patch(.channel, try global_cache.channels.touch(self.context, try .resolve(data.base.channel_id)));
+    self.meta.patch(.author, try global_cache.users.patch(self.context, try .resolve(data.base.author.id), data.base.author));
 
     allocator.free(self.content);
-    self.meta.patch(.content, try allocator.dupe(u8, data.content));
+    self.meta.patch(.content, try allocator.dupe(u8, data.base.content));
 }

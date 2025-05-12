@@ -15,6 +15,7 @@ const Rest = @import("Rest.zig");
 const Channel = @import("structures/Channel.zig");
 const Guild = @import("structures/Guild.zig");
 const Message = @import("structures/Message.zig");
+const Role = @import("structures/Role.zig");
 const User = @import("structures/User.zig");
 
 const Client = @This();
@@ -53,6 +54,7 @@ pub const GlobalCache = struct {
     channels: Cache(Channel, *Client),
     guilds: Cache(Guild, *Client),
     messages: Cache(Message, *Client),
+    roles: Cache(Role, *Client),
     users: Cache(User, *Client),
 };
 
@@ -77,6 +79,7 @@ pub fn init(options: InitOptions) !Client {
             .channels = .init(options.allocator),
             .guilds = .init(options.allocator),
             .messages = .init(options.allocator),
+            .roles = .init(options.allocator),
             .users = .init(options.allocator),
         },
     };
@@ -87,6 +90,7 @@ pub fn deinit(self: *Client) void {
         gateway_client.deinit();
     }
     self.global_cache.users.deinit();
+    self.global_cache.roles.deinit();
     self.global_cache.messages.deinit();
     self.global_cache.guilds.deinit();
     self.global_cache.channels.deinit();
@@ -152,6 +156,7 @@ fn processGuildCreate(self: *Client, allocator: std.mem.Allocator, json: std.jso
             .{ .available = .{
                 .base = available_data.inner_guild,
                 .channels = available_data.extra.channels,
+                .members = available_data.extra.members,
             } },
         ),
         .unavailable => |unavailable_data| try self.global_cache.guilds.patch(
@@ -178,7 +183,18 @@ fn processMessageCreate(self: *Client, allocator: std.mem.Allocator, json: std.j
     const message = try self.global_cache.messages.patch(
         self,
         try .resolve(message_data.inner_message.id),
-        message_data.inner_message,
+        .{
+            .base = message_data.inner_message,
+            .guild_id = switch (message_data.extra.guild_id) {
+                .not_given => null,
+                .val => |guild_id| guild_id,
+            },
+            .member = switch (message_data.extra.member) {
+                .not_given => null,
+                .val => |member| member,
+            },
+            .mentions = message_data.extra.mentions,
+        },
     );
 
     return .{
@@ -265,5 +281,10 @@ pub fn createMessage(self: *Client, channel_id: Snowflake, content: []const u8) 
     try json_writer.endObject();
 
     const message_response = try req.fetchJson(gateway_message.Message);
-    return try self.global_cache.messages.patch(self, try .resolve(message_response.id), message_response);
+    return try self.global_cache.messages.patch(self, try .resolve(message_response.id), .{
+        .base = message_response,
+        .guild_id = null,
+        .member = null,
+        .mentions = &.{},
+    });
 }

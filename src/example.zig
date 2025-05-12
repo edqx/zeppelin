@@ -21,10 +21,9 @@ const Handler = struct {
 
         const message = message_create_event.message;
 
-        const message_content = try std.fmt.allocPrint(self.client.allocator, "Hello {s}!", .{message.author.username});
+        const message_content = try std.fmt.allocPrint(self.client.allocator, "You have {} roles!", .{message.member.roles.len});
         defer self.client.allocator.free(message_content);
 
-        _ = try self.client.createMessage(message.author.id, message_content);
         _ = try message.channel.inner.guild_text.createMessage(message_content);
     }
 };
