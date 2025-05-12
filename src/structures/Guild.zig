@@ -39,12 +39,12 @@ pub fn deinit(self: *Guild) void {
 pub fn patch(self: *Guild, data: Data) !void {
     const allocator = self.context.allocator;
 
-    self.available = data == .available;
+    self.meta.patch(.available, data == .available);
 
     switch (data) {
         .available => |inner_data| {
             allocator.free(self.name);
-            self.name = try allocator.dupe(u8, inner_data.base.name);
+            self.meta.patch(.name, try allocator.dupe(u8, inner_data.base.name));
 
             if (inner_data.channels) |channnels_data| {
                 var channel_references: std.ArrayListUnmanaged(*Channel) = try .initCapacity(allocator, channnels_data.len);

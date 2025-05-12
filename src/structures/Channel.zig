@@ -45,7 +45,7 @@ pub fn AnyChannel(comptime used_fields: []const [:0]const u8) type {
 
         meta: QueriedFields(AnyChannelT, used_fields) = .none,
 
-        guild_id: if (hasField("guild_id")) Snowflake else void = if (hasField("guild_id")) .nil else {},
+        guild: if (hasField("guild")) *Guild else void = if (hasField("guild")) undefined else {},
         name: if (hasField("name")) ?[]const u8 else void = if (hasField("name")) null else {},
 
         pub fn deinit(self: *AnyChannelT) void {
@@ -56,6 +56,13 @@ pub fn AnyChannel(comptime used_fields: []const [:0]const u8) type {
 
         pub fn patch(self: *AnyChannelT, data: Data) !void {
             const allocator = self.context.allocator;
+
+            if (hasField("guild")) {
+                switch (data.guild_id) {
+                    .not_given => {},
+                    .val => |guild_id| self.meta.patch(.guild, try self.context.global_cache.guilds.touch(self.context, try .resolve(guild_id))),
+                }
+            }
 
             if (hasField("name")) {
                 switch (data.name) {
@@ -72,19 +79,19 @@ pub fn AnyChannel(comptime used_fields: []const [:0]const u8) type {
 
 pub const Inner = union(Type) {
     unknown: void,
-    guild_text: AnyChannel(&.{ "guild_id", "name" }),
+    guild_text: AnyChannel(&.{ "guild", "name" }),
     dm: AnyChannel(&.{}),
-    guild_voice: AnyChannel(&.{ "guild_id", "name" }),
+    guild_voice: AnyChannel(&.{ "guild", "name" }),
     group_dm: AnyChannel(&.{"name"}),
-    guild_category: AnyChannel(&.{ "guild_id", "name" }),
-    guild_announcement: AnyChannel(&.{ "guild_id", "name" }),
-    announcement_thread: AnyChannel(&.{ "guild_id", "name" }),
-    public_thread: AnyChannel(&.{ "guild_id", "name" }),
-    private_thread: AnyChannel(&.{ "guild_id", "name" }),
-    guild_stage_voice: AnyChannel(&.{ "guild_id", "name" }),
-    guild_directory: AnyChannel(&.{ "guild_id", "name" }),
-    guild_forum: AnyChannel(&.{ "guild_id", "name" }),
-    guild_media: AnyChannel(&.{ "guild_id", "name" }),
+    guild_category: AnyChannel(&.{ "guild", "name" }),
+    guild_announcement: AnyChannel(&.{ "guild", "name" }),
+    announcement_thread: AnyChannel(&.{ "guild", "name" }),
+    public_thread: AnyChannel(&.{ "guild", "name" }),
+    private_thread: AnyChannel(&.{ "guild", "name" }),
+    guild_stage_voice: AnyChannel(&.{ "guild", "name" }),
+    guild_directory: AnyChannel(&.{ "guild", "name" }),
+    guild_forum: AnyChannel(&.{ "guild", "name" }),
+    guild_media: AnyChannel(&.{ "guild", "name" }),
 };
 
 meta: QueriedFields(Channel, &.{

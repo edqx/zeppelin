@@ -21,10 +21,11 @@ const Handler = struct {
 
         const message = message_create_event.message;
 
-        std.log.info("'{s}' from {s} in {?s}", .{
+        std.log.info("'{s}' from {s} in {?s} in {s}", .{
             message.content,
             message.author.username,
             message.channel.inner.guild_text.name,
+            message.channel.inner.guild_text.guild.name,
         });
     }
 };
