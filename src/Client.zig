@@ -1,7 +1,11 @@
 const std = @import("std");
 const websocket = @import("websocket");
+
 const gateway = @import("gateway.zig");
 const gateway_message = @import("gateway_message.zig");
+const endpoints = @import("constants.zig").endpoints;
+
+const Snowflake = @import("snowflake.zig").Snowflake;
 
 const Authentication = @import("authentication.zig").Authentication;
 const Cache = @import("cache.zig").Cache;
@@ -241,4 +245,23 @@ pub fn receiveAndDispatch(self: *Client, handler: anytype) !void {
         .guild_create => |ev| if (@hasDecl(@TypeOf(handler.*), "guildCreate")) try handler.guildCreate(ev),
         .message_create => |ev| if (@hasDecl(@TypeOf(handler.*), "messageCreate")) try handler.messageCreate(ev),
     }
+}
+
+pub fn createMessage(self: *Client, channel_id: Snowflake, content: []const u8) !*Message {
+    var req = try self.rest_client.create(.POST, endpoints.create_message, .{
+        .channel_id = channel_id,
+    });
+    defer req.deinit();
+
+    var json_writer = try req.begin(.json);
+
+    try json_writer.beginObject();
+
+    try json_writer.objectField("content");
+    try json_writer.write(content);
+
+    try json_writer.endObject();
+
+    const message_response = try req.fetchJson(gateway_message.Message);
+    return try self.global_cache.messages.patch(self, try .resolve(message_response.id), message_response);
 }

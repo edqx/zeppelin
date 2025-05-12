@@ -4,35 +4,39 @@ const Authentication = @import("authentication.zig").Authentication;
 const Rest = @This();
 
 pub const Request = struct {
-    server_header_buffer: []u8,
-    allocator: std.mem.Allocator,
+    pub const BodyKind = enum {
+        json,
+    };
 
-    authorization_header: ?[]const u8,
-    authentication: *Authentication,
+    arena: std.heap.ArenaAllocator,
     http_request: std.http.Client.Request,
 
     pub fn deinit(self: *Request) void {
         self.http_request.deinit();
-        if (self.authorization_header) |authorization_header| self.allocator.free(authorization_header);
-        self.allocator.free(self.server_header_buffer);
+        self.arena.deinit();
     }
 
     pub fn writer(self: *Request) std.http.Client.Request.Writer {
         return self.http_request.writer();
     }
 
-    pub fn begin(self: *Request, content_type: []const u8) !void {
-        self.authorization_header = try std.fmt.allocPrint(self.allocator, "Bot {s}", .{self.authentication.resolve()});
-        errdefer if (self.authorization_header) |authorization_header| self.allocator.free(authorization_header);
+    pub fn begin(self: *Request, kind: BodyKind) !switch (kind) {
+        .json => @TypeOf(std.json.writeStream(self.writer(), .{})),
+    } {
+        self.http_request.headers.content_type = .{ .override = switch (kind) {
+            .json => "application/json",
+        } };
 
-        self.http_request.headers = .{
-            .authorization = .{ .override = self.authorization_header.? },
-            .content_type = .{ .override = content_type },
-        };
         try self.http_request.send();
+
+        return switch (kind) {
+            .json => std.json.writeStream(self.writer(), .{}),
+        };
     }
 
-    pub fn fetchJson(self: *Request, allocator: std.mem.Allocator, comptime ResponseData: type) !ResponseData {
+    pub fn fetchJson(self: *Request, comptime ResponseData: type) !ResponseData {
+        const allocator = self.arena.allocator();
+
         try self.http_request.finish();
         try self.http_request.wait();
 
@@ -66,20 +70,35 @@ pub fn deinit(self: *Rest) void {
     self.http_client.deinit();
 }
 
-pub fn create(self: *Rest, method: std.http.Method, uri: std.Uri) !Request {
-    const server_header_buffer = try self.allocator.alloc(u8, 2048);
-    errdefer self.allocator.free(server_header_buffer);
+pub fn create(
+    self: *Rest,
+    method: std.http.Method,
+    comptime endpoint: []const u8,
+    parameters: anytype,
+) !Request {
+    var arena: std.heap.ArenaAllocator = .init(self.allocator);
+    errdefer arena.deinit();
 
-    var req = try self.http_client.open(method, uri, .{
+    const allocator = arena.allocator();
+
+    const server_header_buffer = try allocator.alloc(u8, 2048);
+    errdefer allocator.free(server_header_buffer);
+
+    const formatted_uri = try std.fmt.allocPrint(allocator, endpoint, parameters);
+    errdefer allocator.free(formatted_uri);
+
+    var req = try self.http_client.open(method, try std.Uri.parse(formatted_uri), .{
         .server_header_buffer = server_header_buffer,
     });
     req.transfer_encoding = .chunked;
 
+    const authorization_header = try std.fmt.allocPrint(allocator, "Bot {s}", .{self.authentication.resolve()});
+    errdefer allocator.free(authorization_header);
+
+    req.headers.authorization = .{ .override = authorization_header };
+
     return .{
-        .server_header_buffer = server_header_buffer,
-        .allocator = self.allocator,
-        .authorization_header = null,
-        .authentication = &self.authentication,
+        .arena = arena,
         .http_request = req,
     };
 }

@@ -21,8 +21,6 @@ const Handler = struct {
 
         const message = message_create_event.message;
 
-        try self.client.createMessage(message.channel.id, "peace for all womankind");
-
         _ = try message.channel.inner.guild_text.createMessage("peace for all womankind");
     }
 };

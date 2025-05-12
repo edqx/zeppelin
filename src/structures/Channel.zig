@@ -29,11 +29,30 @@ pub const Type = enum(i32) {
     guild_directory,
     guild_forum,
     guild_media,
+
+    pub fn messageable(self: Type) bool {
+        return switch (self) {
+            .unknown => unreachable,
+            .guild_text,
+            .dm,
+            .guild_voice,
+            .group_dm,
+            .guild_announcement,
+            .announcement_thread,
+            .public_thread,
+            .private_thread,
+            .guild_stage_voice,
+            .guild_forum,
+            .guild_media,
+            => true,
+            .guild_category, .guild_directory => false,
+        };
+    }
 };
 
 pub const PermissionOverwrite = struct {};
 
-pub fn AnyChannel(comptime used_fields: []const [:0]const u8) type {
+pub fn AnyChannel(comptime channel_type: Type, comptime used_fields: []const [:0]const u8) type {
     return struct {
         inline fn hasField(field: []const u8) bool {
             return comptime for (used_fields) |used_field| {
@@ -79,30 +98,8 @@ pub fn AnyChannel(comptime used_fields: []const [:0]const u8) type {
         }
 
         pub fn createMessage(self: *AnyChannelT, content: []const u8) !*Message {
-            const url = try std.fmt.allocPrint(self.context.allocator, "https://discord.com/api/v10/channels/{}/messages", .{self.id});
-            defer self.context.allocator.free(url);
-
-            var req = try self.context.rest_client.create(.POST, try std.Uri.parse(url));
-            defer req.deinit();
-
-            try req.begin("application/json");
-
-            var json_writer = std.json.writeStream(req.writer(), .{});
-            defer json_writer.deinit();
-
-            try json_writer.beginObject();
-
-            try json_writer.objectField("content");
-            try json_writer.write(content);
-
-            try json_writer.endObject();
-
-            var arena: std.heap.ArenaAllocator = .init(self.context.allocator);
-            defer arena.deinit();
-
-            const message_response = try req.fetchJson(arena.allocator(), gateway_message.Message);
-
-            return try self.context.global_cache.messages.patch(self.context, try .resolve(message_response.id), message_response);
+            comptime if (!channel_type.messageable()) @compileError("Cannot create messages in " ++ @tagName(channel_type) ++ " channels");
+            return try self.context.createMessage(self.id, content);
         }
     };
 }
@@ -112,19 +109,19 @@ pub const Inner = union(Type) {
     const has_name: []const [:0]const u8 = &.{"name"};
 
     unknown: void,
-    guild_text: AnyChannel(in_guild ++ has_name),
-    dm: AnyChannel(&.{}),
-    guild_voice: AnyChannel(in_guild ++ has_name),
-    group_dm: AnyChannel(has_name),
-    guild_category: AnyChannel(in_guild ++ has_name),
-    guild_announcement: AnyChannel(in_guild ++ has_name),
-    announcement_thread: AnyChannel(in_guild ++ has_name),
-    public_thread: AnyChannel(in_guild ++ has_name),
-    private_thread: AnyChannel(in_guild ++ has_name),
-    guild_stage_voice: AnyChannel(in_guild ++ has_name),
-    guild_directory: AnyChannel(in_guild ++ has_name),
-    guild_forum: AnyChannel(in_guild ++ has_name),
-    guild_media: AnyChannel(in_guild ++ has_name),
+    guild_text: AnyChannel(.guild_text, in_guild ++ has_name),
+    dm: AnyChannel(.dm, &.{}),
+    guild_voice: AnyChannel(.guild_voice, in_guild ++ has_name),
+    group_dm: AnyChannel(.dm, has_name),
+    guild_category: AnyChannel(.guild_category, in_guild ++ has_name),
+    guild_announcement: AnyChannel(.guild_announcement, in_guild ++ has_name),
+    announcement_thread: AnyChannel(.announcement_thread, in_guild ++ has_name),
+    public_thread: AnyChannel(.public_thread, in_guild ++ has_name),
+    private_thread: AnyChannel(.private_thread, in_guild ++ has_name),
+    guild_stage_voice: AnyChannel(.guild_stage_voice, in_guild ++ has_name),
+    guild_directory: AnyChannel(.guild_directory, in_guild ++ has_name),
+    guild_forum: AnyChannel(.guild_forum, in_guild ++ has_name),
+    guild_media: AnyChannel(.guild_media, in_guild ++ has_name),
 };
 
 meta: QueriedFields(Channel, &.{
