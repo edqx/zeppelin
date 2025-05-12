@@ -21,7 +21,11 @@ const Handler = struct {
 
         const message = message_create_event.message;
 
-        _ = try message.channel.inner.guild_text.createMessage("peace for all womankind");
+        const message_content = try std.fmt.allocPrint(self.client.allocator, "Hello {s}!", .{message.author.username});
+        defer self.client.allocator.free(message_content);
+
+        _ = try self.client.createMessage(message.author.id, message_content);
+        _ = try message.channel.inner.guild_text.createMessage(message_content);
     }
 };
 

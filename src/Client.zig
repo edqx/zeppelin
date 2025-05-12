@@ -88,6 +88,8 @@ pub fn deinit(self: *Client) void {
     }
     self.global_cache.users.deinit();
     self.global_cache.messages.deinit();
+    self.global_cache.guilds.deinit();
+    self.global_cache.channels.deinit();
     self.rest_client.deinit();
 }
 

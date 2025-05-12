@@ -134,7 +134,10 @@ id: Snowflake,
 inner: Inner = .unknown,
 
 pub fn deinit(self: *Channel) void {
-    _ = self;
+    switch (self.inner) {
+        .unknown => {},
+        inline else => |*inner| inner.deinit(),
+    }
 }
 
 pub fn patch(self: *Channel, data: Data) !void {
