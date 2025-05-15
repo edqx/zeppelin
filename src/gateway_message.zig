@@ -47,6 +47,7 @@ pub const opcode = struct {
 
         pub fn Payload(comptime self: opcode.Send) type {
             return switch (self) {
+                .heartbeat => payload.Heartbeat,
                 .identify => payload.Identify,
                 else => @compileError("Unsupported payload type for send opcode " ++ @tagName(self)),
             };
@@ -103,8 +104,8 @@ pub fn Send(comptime Payload: type) type {
     return struct {
         op: i32,
         d: Payload,
-        s: Elective(i32) = .not_given,
-        t: Elective([]const u8) = .not_given,
+        s: ?i32 = null,
+        t: ?[]const u8 = null,
     };
 }
 
@@ -394,6 +395,8 @@ pub const payload = struct {
     pub const Hello = struct {
         heartbeat_interval: i32,
     };
+
+    pub const Heartbeat = ?usize;
 
     pub const Identify = struct {
         pub const Properties = struct {

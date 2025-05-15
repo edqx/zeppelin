@@ -65,6 +65,7 @@ pub const InitOptions = struct {
 
 allocator: std.mem.Allocator,
 maybe_gateway_client: ?gateway.Client,
+maybe_reconnect_options: ?gateway.Options,
 
 rest_client: Rest,
 
@@ -74,6 +75,7 @@ pub fn init(options: InitOptions) !Client {
     return .{
         .allocator = options.allocator,
         .maybe_gateway_client = null,
+        .maybe_reconnect_options = null,
         .rest_client = .init(options.allocator, options.authentication),
         .global_cache = .{
             .channels = .init(options.allocator),
@@ -86,15 +88,16 @@ pub fn init(options: InitOptions) !Client {
 }
 
 pub fn deinit(self: *Client) void {
-    if (self.maybe_gateway_client) |*gateway_client| {
-        gateway_client.deinit();
-    }
     self.global_cache.users.deinit();
     self.global_cache.roles.deinit();
     self.global_cache.messages.deinit();
     self.global_cache.guilds.deinit();
     self.global_cache.channels.deinit();
     self.rest_client.deinit();
+    self.clearReconnect();
+    if (self.maybe_gateway_client) |*gateway_client| {
+        gateway_client.deinit();
+    }
 }
 
 pub fn connected(self: *Client) bool {
@@ -107,19 +110,33 @@ pub fn disconnect(self: *Client) !void {
     try gateway_client.disconnect();
     gateway_client.deinit();
     self.maybe_gateway_client = null;
+    self.clearReconnect();
 }
 
 pub fn connectAndLogin(self: *Client, options: gateway.Options) !void {
     if (self.maybe_gateway_client != null) return error.Connected;
+    self.maybe_reconnect_options = null;
 
-    self.maybe_gateway_client = try gateway.Client.init(self.allocator, self.rest_client.authentication.resolve(), options);
+    self.maybe_gateway_client = try gateway.Client.init(
+        self.allocator,
+        self.rest_client.authentication.resolve(),
+        options,
+    );
     try self.maybe_gateway_client.?.connectAndAuthenticate();
 }
 
-fn processReadyEvent(self: *Client, allocator: std.mem.Allocator, json: std.json.Value) !Event.Ready {
+fn clearReconnect(self: *Client) void {
+    if (self.maybe_reconnect_options) |reconnect_options| {
+        self.allocator.free(reconnect_options.session_id);
+        self.allocator.free(reconnect_options.host);
+    }
+    self.maybe_reconnect_options = null;
+}
+
+fn processReadyEvent(self: *Client, arena: std.mem.Allocator, json: std.json.Value) !Event.Ready {
     const ready_data = try std.json.parseFromValueLeaky(
         gateway_message.payload.Ready,
-        allocator,
+        arena,
         json,
         .{
             .allocate = .alloc_always,
@@ -133,15 +150,22 @@ fn processReadyEvent(self: *Client, allocator: std.mem.Allocator, json: std.json
         ready_data.user,
     );
 
-    return .{
-        .user = user,
-    };
+    const session_id = try self.allocator.dupe(u8, ready_data.session_id);
+    errdefer self.allocator.free(session_id);
+    const resume_gateway_url = try self.allocator.dupe(u8, ready_data.resume_gateway_url);
+    errdefer self.allocator.free(resume_gateway_url);
+
+    self.maybe_reconnect_options = self.maybe_gateway_client.?.options;
+    self.maybe_reconnect_options.?.session_id = session_id;
+    self.maybe_reconnect_options.?.host = resume_gateway_url;
+
+    return .{ .user = user };
 }
 
-fn processGuildCreate(self: *Client, allocator: std.mem.Allocator, json: std.json.Value) !Event.GuildCreate {
+fn processGuildCreate(self: *Client, arena: std.mem.Allocator, json: std.json.Value) !Event.GuildCreate {
     const guild_data = try std.json.parseFromValueLeaky(
         gateway_message.payload.GuildCreate,
-        allocator,
+        arena,
         json,
         .{
             .allocate = .alloc_always,
@@ -169,10 +193,10 @@ fn processGuildCreate(self: *Client, allocator: std.mem.Allocator, json: std.jso
     return .{ .guild = guild };
 }
 
-fn processMessageCreate(self: *Client, allocator: std.mem.Allocator, json: std.json.Value) !Event.MessageCreate {
+fn processMessageCreate(self: *Client, arena: std.mem.Allocator, json: std.json.Value) !Event.MessageCreate {
     const message_data = try std.json.parseFromValueLeaky(
         gateway_message.payload.MessageCreate,
-        allocator,
+        arena,
         json,
         .{
             .allocate = .alloc_always,
@@ -197,9 +221,7 @@ fn processMessageCreate(self: *Client, allocator: std.mem.Allocator, json: std.j
         },
     );
 
-    return .{
-        .message = message,
-    };
+    return .{ .message = message };
 }
 
 pub fn receive(self: *Client) !Event {
@@ -230,25 +252,36 @@ pub fn receive(self: *Client) !Event {
             .hello, .invalid_session, .reconnect => {
                 // TODO: handle
             },
-            .close => |close_opcode| {
-                switch (close_opcode) {
-                    .rate_limited => return error.RateLimited,
-                    .session_timed_out => return error.TimedOut,
-                    .not_authenticated,
-                    .authentication_failed,
-                    .already_authenticated,
-                    => return error.AuthenticationFailed,
-                    .invalid_intents,
-                    .disallowed_intents,
-                    => return error.BadIntents,
-                    .unknown_error,
-                    .unknown_opcode,
-                    .decode_error,
-                    .invalid_sequence,
-                    .invalid_shard,
-                    .sharding_required,
-                    .invalid_api_version,
-                    => return error.UnexpectedClose,
+            .close => |maybe_close_opcode| {
+                if (maybe_close_opcode) |close_opcode| {
+                    if (!close_opcode.reconnect()) {
+                        self.clearReconnect();
+                    }
+
+                    try self.disconnect();
+
+                    switch (close_opcode) {
+                        .rate_limited => return error.RateLimited,
+                        .session_timed_out => return error.TimedOut,
+                        .not_authenticated,
+                        .authentication_failed,
+                        .already_authenticated,
+                        => return error.AuthenticationFailed,
+                        .invalid_intents,
+                        .disallowed_intents,
+                        => return error.BadIntents,
+                        .unknown_error,
+                        .unknown_opcode,
+                        .decode_error,
+                        .invalid_sequence,
+                        .invalid_shard,
+                        .sharding_required,
+                        .invalid_api_version,
+                        => return error.UnexpectedClose,
+                    }
+                } else {
+                    self.clearReconnect();
+                    return error.UnexpectedClose;
                 }
             },
         }

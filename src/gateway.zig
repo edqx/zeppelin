@@ -88,11 +88,13 @@ pub const MessageRead = union(enum) {
     reconnect: void,
     invalid_session: void,
     hello: Hello,
-    close: gateway_message.opcode.Close,
+    close: ?gateway_message.opcode.Close,
 };
 
 pub const Options = struct {
-    intents: Intent,
+    intents: Intent = .{},
+    host: []const u8 = "gateway.discord.gg",
+    session_id: []const u8 = "",
 };
 
 pub const Client = struct {
@@ -106,18 +108,30 @@ pub const Client = struct {
     heartbeat_thread: ?std.Thread,
 
     heartbeat_interval: ?usize,
+    sequence_number: ?usize,
+    was_last_heartbeat_acknowledged: bool,
     state: State,
 
-    pub fn init(allocator: std.mem.Allocator, token_ephemeral: []const u8, options: Options) !Client {
+    pub fn init(
+        allocator: std.mem.Allocator,
+        token_ephemeral: []const u8,
+        options: Options,
+    ) !Client {
         var websocket_client = try websocket.Client.init(allocator, .{
-            .host = "gateway.discord.gg",
+            .host = options.host,
             .port = 443,
             .tls = true,
         });
+        errdefer websocket_client.deinit();
+
+        const headers = try std.fmt.allocPrint(allocator,
+            \\Host: {s}
+        , .{options.host});
+        defer allocator.free(headers);
 
         try websocket_client.handshake("/?v=10&encoding=json", .{
             .timeout_ms = 5000,
-            .headers = "Host: gateway.discord.gg",
+            .headers = headers,
         });
 
         return .{
@@ -131,6 +145,8 @@ pub const Client = struct {
             .heartbeat_thread = null,
 
             .heartbeat_interval = std.time.ms_per_s * 40,
+            .sequence_number = null,
+            .was_last_heartbeat_acknowledged = true,
             .state = .established,
         };
     }
@@ -198,6 +214,10 @@ pub const Client = struct {
                         return error.UnknownOpcode;
                     };
 
+                    if (event.s) |new_sequence_number| {
+                        self.sequence_number = @intCast(new_sequence_number);
+                    }
+
                     switch (opcode) {
                         .dispatch => {
                             return .{ .dispatch_event = .{
@@ -206,7 +226,7 @@ pub const Client = struct {
                             } };
                         },
                         .heartbeat => {
-                            // TODO: handle
+                            try self.sendHeartbeat(arena);
                         },
                         .reconnect => {
                             return .reconnect;
@@ -228,7 +248,8 @@ pub const Client = struct {
                             } };
                         },
                         .heartbeat_acknowledge => {
-                            // TODO: dunno yet
+                            self.was_last_heartbeat_acknowledged = true;
+                            std.log.info("got heartbeat acknowledge", .{});
                         },
                     }
                 },
@@ -248,6 +269,7 @@ pub const Client = struct {
                     }
 
                     self.websocket_client.close(.{}) catch unreachable;
+                    return .{ .close = null };
                 },
                 .pong => {},
             }
@@ -267,6 +289,8 @@ pub const Client = struct {
 
         const data = try std.json.stringifyAlloc(allocator, send_event, .{});
         defer allocator.free(data);
+
+        std.log.info("sent {s}", .{data});
 
         try self.websocket_client.write(data);
     }
@@ -289,13 +313,29 @@ pub const Client = struct {
         });
     }
 
+    fn sendHeartbeat(self: *Client, allocator: std.mem.Allocator) !void {
+        try self.sendEvent(allocator, .heartbeat, self.sequence_number);
+    }
+
     fn heartbeatInterval(self: *Client) !void {
         while (true) {
             if (self.heartbeat_reset.timedWait(@intCast(std.time.ns_per_ms * self.heartbeat_interval.?))) {
                 break; // no more heartbeats, gateway disconnected
             } else |e| {
                 switch (e) {
-                    error.Timeout => if (!self.state.alive()) continue,
+                    error.Timeout => {
+                        if (!self.state.alive()) continue;
+                        var arena: std.heap.ArenaAllocator = .init(self.allocator);
+                        defer arena.deinit();
+
+                        if (!self.was_last_heartbeat_acknowledged) {
+                            try self.websocket_client.close(.{});
+                            break;
+                        }
+
+                        self.was_last_heartbeat_acknowledged = false;
+                        try self.sendHeartbeat(arena.allocator());
+                    },
                     else => return e,
                 }
             }
