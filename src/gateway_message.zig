@@ -1,5 +1,4 @@
 const std = @import("std");
-
 pub fn Elective(comptime Inner: type) type {
     return union(enum) {
         not_given: void,

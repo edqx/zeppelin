@@ -21,10 +21,20 @@ const Handler = struct {
 
         const message = message_create_event.message;
 
-        const message_content = try std.fmt.allocPrint(self.client.allocator, "You have {} roles!", .{message.member.roles.len});
-        defer self.client.allocator.free(message_content);
+        var dynamic_buffer: std.ArrayListUnmanaged(u8) = .empty;
+        defer dynamic_buffer.deinit(self.client.allocator);
 
-        _ = try message.channel.inner.guild_text.createMessage(message_content);
+        const writer = dynamic_buffer.writer(self.client.allocator);
+
+        try writer.print("Your roles sir: ", .{});
+        for (0.., message.member.roles) |i, role| {
+            if (i != 0) {
+                try writer.print(", ", .{});
+            }
+            try writer.print(" {s}", .{role.name});
+        }
+
+        _ = try message.channel.inner.guild_text.createMessage(dynamic_buffer.items);
     }
 };
 

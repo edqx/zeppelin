@@ -57,7 +57,6 @@ pub const Member = struct {
     pub fn deinit(self: *Member) void {
         const allocator = self.context.context.allocator;
 
-        std.log.info("deiniting", .{});
         allocator.free(self.roles);
         if (self.nick) |nick| allocator.free(nick);
     }
@@ -90,6 +89,7 @@ pub const Member = struct {
             role_references.appendAssumeCapacity(role);
         }
 
+        allocator.free(self.roles);
         self.meta.patch(.roles, try role_references.toOwnedSlice(allocator));
     }
 };
@@ -144,6 +144,7 @@ fn patchAvailable(self: *Guild, inner_data: @FieldType(Data, "available")) !void
             channel_references.appendAssumeCapacity(channel);
         }
 
+        allocator.free(self.channels);
         self.meta.patch(.channels, try channel_references.toOwnedSlice(allocator));
     }
 
@@ -168,6 +169,7 @@ fn patchAvailable(self: *Guild, inner_data: @FieldType(Data, "available")) !void
         role.guild = self;
     }
 
+    allocator.free(self.roles);
     self.meta.patch(.roles, try role_references.toOwnedSlice(allocator));
 }
 
