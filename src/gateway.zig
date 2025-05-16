@@ -249,7 +249,6 @@ pub const Client = struct {
                         },
                         .heartbeat_acknowledge => {
                             self.was_last_heartbeat_acknowledged = true;
-                            std.log.info("got heartbeat acknowledge", .{});
                         },
                     }
                 },
@@ -290,8 +289,6 @@ pub const Client = struct {
         const data = try std.json.stringifyAlloc(allocator, send_event, .{});
         defer allocator.free(data);
 
-        std.log.info("sent {s}", .{data});
-
         try self.websocket_client.write(data);
     }
 
@@ -318,8 +315,13 @@ pub const Client = struct {
     }
 
     fn heartbeatInterval(self: *Client) !void {
+        var prng = std.Random.DefaultPrng.init(@intCast(std.time.microTimestamp()));
+        const interval: i64 = @intCast(self.heartbeat_interval.?);
+        var wait_ms = prng.random().intRangeAtMost(i64, 0, interval);
+
         while (true) {
-            if (self.heartbeat_reset.timedWait(@intCast(std.time.ns_per_ms * self.heartbeat_interval.?))) {
+            defer wait_ms = interval;
+            if (self.heartbeat_reset.timedWait(@intCast(std.time.ns_per_ms * wait_ms))) {
                 break; // no more heartbeats, gateway disconnected
             } else |e| {
                 switch (e) {

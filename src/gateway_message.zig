@@ -106,6 +106,23 @@ pub fn Send(comptime Payload: type) type {
         d: Payload,
         s: ?i32 = null,
         t: ?[]const u8 = null,
+
+        pub fn jsonStringify(self: @This(), jw: anytype) !void {
+            try jw.beginObject();
+            try jw.objectField("op");
+            try jw.write(self.op);
+            try jw.objectField("d");
+            try jw.write(self.d);
+            if (self.s) |s| {
+                try jw.objectField("s");
+                try jw.write(s);
+            }
+            if (self.t) |t| {
+                try jw.objectField("t");
+                try jw.write(t);
+            }
+            try jw.endObject();
+        }
     };
 }
 
