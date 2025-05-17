@@ -50,6 +50,22 @@ pub const Type = enum(i32) {
             .guild_category, .guild_directory => false,
         };
     }
+
+    pub fn guild(self: Type) bool {
+        return switch (self) {
+            .unknown => unreachable,
+            .guild_text,
+            .guild_voice,
+            .guild_announcement,
+            .guild_stage_voice,
+            .guild_forum,
+            .guild_media,
+            .guild_category,
+            .guild_directory,
+            => true,
+            .dm, .group_dm, .announcement_thread, .public_thread, .private_thread => false,
+        };
+    }
 };
 
 pub const PermissionOverwrite = struct {};
@@ -140,7 +156,9 @@ pub fn AnyChannel(comptime channel_type: Type, comptime used_fields: []const [:0
             } else null;
         }
 
-        pub fn computePermissionsForMember(self: *AnyChannelT, member: *Guild.Member) {
+        pub fn computePermissionsForMember(self: *AnyChannelT, member: *Guild.Member) Permissions {
+            comptime if (!channel_type.guild()) @compileError("Cannot compute permissions in " ++ @tagName(channel_type) ++ " channels");
+
             var member_permissions = member.computePermissions();
 
             if (member_permissions.administrator) return .all;
