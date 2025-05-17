@@ -122,7 +122,18 @@ pub fn connectAndLogin(self: *Client, options: gateway.Options) !void {
         self.rest_client.authentication.resolve(),
         options,
     );
-    try self.maybe_gateway_client.?.connectAndAuthenticate();
+    if (try self.maybe_gateway_client.?.connectAndAuthenticate()) |fail_message| {
+        switch (fail_message) {
+            .dispatch_event, .hello, .close => unreachable,
+            .reconnect => {
+                try self.disconnect();
+                return try self.connectAndLogin(options);
+            },
+            .invalid_session => {
+                // todo: handle
+            },
+        }
+    }
 }
 
 fn clearReconnect(self: *Client) void {
@@ -249,7 +260,12 @@ pub fn receive(self: *Client) !Event {
                     },
                 }
             },
-            .hello, .invalid_session, .reconnect => {
+            .reconnect => {
+                const reconnect_options = self.maybe_gateway_client.?.options;
+                try self.disconnect();
+                try self.connectAndLogin(reconnect_options);
+            },
+            .hello, .invalid_session => {
                 // TODO: handle
             },
             .close => |maybe_close_opcode| {
@@ -280,7 +296,7 @@ pub fn receive(self: *Client) !Event {
                         => return error.UnexpectedClose,
                     }
                 } else {
-                    self.clearReconnect();
+                    // self.clearReconnect(); // let's try to reconnect if the socket closes 'normally'
                     return error.UnexpectedClose;
                 }
             },

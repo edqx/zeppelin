@@ -169,7 +169,7 @@ pub const Client = struct {
         }
     }
 
-    pub fn connectAndAuthenticate(self: *Client) !void {
+    pub fn connectAndAuthenticate(self: *Client) !?MessageRead {
         try self.websocket_client.readTimeout(0);
 
         while (true) {
@@ -178,11 +178,12 @@ pub const Client = struct {
 
             const allocator = arena.allocator();
 
-            switch (try self.readMessage(allocator)) {
-                .dispatch_event,
+            const message = try self.readMessage(allocator);
+            switch (message) {
+                .dispatch_event => {},
                 .reconnect,
                 .invalid_session,
-                => {},
+                => return message,
                 .hello => |hello_details| {
                     self.heartbeat_interval = hello_details.heartbeat_interval;
                     self.heartbeat_thread = try std.Thread.spawn(.{}, heartbeatInterval, .{self});
@@ -194,6 +195,7 @@ pub const Client = struct {
                 .close => return error.UnexpectedClose,
             }
         }
+        return null;
     }
 
     pub fn readMessage(self: *Client, arena: std.mem.Allocator) !MessageRead {
@@ -267,7 +269,7 @@ pub const Client = struct {
                         return .{ .close = close_opcode };
                     }
 
-                    self.websocket_client.close(.{}) catch unreachable;
+                    try self.websocket_client.close(.{});
                     return .{ .close = null };
                 },
                 .pong => {},
