@@ -4,6 +4,8 @@ const Snowflake = @import("../snowflake.zig").Snowflake;
 const QueriedFields = @import("../queryable.zig").QueriedFields;
 const Client = @import("../Client.zig");
 
+const Permissions = @import("../permissions.zig").Permissions;
+
 const Cache = @import("../cache.zig").Cache;
 
 const Channel = @import("Channel.zig");
@@ -55,7 +57,7 @@ pub const Member = struct {
     }
 
     pub fn deinit(self: *Member) void {
-        const allocator = self.context.context.allocator;
+        const allocator = self.guild.context.allocator;
 
         allocator.free(self.roles);
         if (self.nick) |nick| allocator.free(nick);
@@ -67,7 +69,7 @@ pub const Member = struct {
         switch (data.user) {
             .not_given => {},
             .val => |data_user| {
-                const user = try self.context.context.global_cache.users.patch(self.context.context, try .resolve(data_user.id), data_user);
+                const user = try self.guild.context.global_cache.users.patch(self.guild.context, try .resolve(data_user.id), data_user);
                 self.meta.patch(.user, user);
             },
         }
@@ -80,17 +82,31 @@ pub const Member = struct {
             },
         }
 
-        var role_references: std.ArrayListUnmanaged(*Role) = try .initCapacity(allocator, data.roles.len);
+        var role_references: std.ArrayListUnmanaged(*Role) = try .initCapacity(allocator, 1 + data.roles.len);
         defer role_references.deinit(allocator);
 
+        const everyone_role = try self.guild.context.global_cache.roles.touch(self.guild.context, self.guild.id);
+        everyone_role.guild = self.guild;
+        role_references.appendAssumeCapacity(everyone_role);
+
         for (data.roles) |role_id| {
-            const role = try self.context.context.global_cache.roles.touch(self.context.context, try .resolve(role_id));
+            const role = try self.guild.context.global_cache.roles.touch(self.guild.context, try .resolve(role_id));
             role.guild = self.guild;
             role_references.appendAssumeCapacity(role);
         }
 
         allocator.free(self.roles);
         self.meta.patch(.roles, try role_references.toOwnedSlice(allocator));
+    }
+
+    pub fn computePermissions(self: *Member) Permissions {
+        var final: Permissions = .{};
+
+        for (self.roles) |role| {
+            final = final.withAllowed(role.permissions);
+        }
+
+        return if (final.administrator) .all else final;
     }
 };
 

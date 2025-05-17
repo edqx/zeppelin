@@ -178,7 +178,7 @@ pub const Role = struct {
     icon: Elective(?[]const u8) = .not_given,
     unicode_emoji: Elective(?[]const u8) = .not_given,
     position: i32,
-    permissions: []const u8,
+    permissions: Permissions,
     managed: bool,
     mentionable: bool,
     tags: Elective(Tag) = .not_given,
@@ -205,7 +205,7 @@ pub const Guild = struct {
         mute: bool,
         flags: i32,
         pending: Elective(bool) = .not_given,
-        permissions: Elective([]const u8) = .not_given,
+        permissions: Elective(Permissions) = .not_given,
         communication_disabled_util: Elective(?Iso8601Timestamp) = .not_given,
         avatar_decoration_data: Elective(?AvatarDecorationData) = .not_given,
     };
@@ -222,7 +222,7 @@ pub const Guild = struct {
     discovery_splash: ?[]const u8,
     owner: Elective(bool) = .not_given,
     owner_id: Snowflake,
-    permissions: Elective([]const u8) = .not_given,
+    permissions: Elective(Permissions) = .not_given,
     region: Elective(?[]const u8) = .not_given,
     afk_channel_id: ?Snowflake,
     afk_timeout: i32,
@@ -260,13 +260,13 @@ pub const Guild = struct {
     incidents_data: ?IncidentsData,
 };
 
-pub const Permission = struct {
-    pub const Overwrite = struct {
-        id: Snowflake,
-        type: i32,
-        allow: []const u8,
-        deny: []const u8,
-    };
+pub const Permissions = []const u8;
+
+pub const PermissionsOverwrite = struct {
+    id: Snowflake,
+    type: i32,
+    allow: Permissions,
+    deny: Permissions,
 };
 
 pub const Channel = struct {
@@ -301,7 +301,7 @@ pub const Channel = struct {
     type: i32,
     guild_id: Elective(Snowflake) = .not_given,
     position: Elective(i32) = .not_given,
-    permission_overwrites: Elective([]Permission.Overwrite) = .not_given,
+    permission_overwrites: Elective([]PermissionsOverwrite) = .not_given,
     name: Elective(?[]const u8) = .not_given,
     topic: Elective(?[]const u8) = .not_given,
     nsfw: Elective(bool) = .not_given,
@@ -323,7 +323,7 @@ pub const Channel = struct {
     thread_metadata: Elective(ThreadMetadata) = .not_given,
     member: Elective(ThreadMember) = .not_given,
     default_auto_archive_duration: Elective(i32) = .not_given,
-    permissions: Elective([]const u8) = .not_given,
+    permissions: Elective(Permissions) = .not_given,
     flags: Elective(i32) = .not_given,
     total_message_sent: Elective(i32) = .not_given,
     available_tags: Elective([]ForumTag) = .not_given,

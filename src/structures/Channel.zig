@@ -4,6 +4,8 @@ const Snowflake = @import("../snowflake.zig").Snowflake;
 const QueriedFields = @import("../queryable.zig").QueriedFields;
 const Client = @import("../Client.zig");
 
+const Permissions = @import("../permissions.zig").Permissions;
+
 const gateway_message = @import("../gateway_message.zig");
 
 const Guild = @import("Guild.zig");
@@ -70,10 +72,13 @@ pub fn AnyChannel(comptime channel_type: Type, comptime used_fields: []const [:0
         guild: if (hasField("guild")) *Guild else void = if (hasField("guild")) undefined else {},
         name: if (hasField("name")) ?[]const u8 else void = if (hasField("name")) null else {},
 
+        permission_overwrites: if (hasField("permission_overwrites")) []Permissions.Overwrite else void = if (hasField("permission_overwrites")) &.{} else {},
+
         pub fn deinit(self: *AnyChannelT) void {
             const allocator = self.context.allocator;
 
             if (hasField("name")) if (self.name) |name| allocator.free(name);
+            if (hasField("permission_overwrites")) allocator.free(self.permission_overwrites);
         }
 
         pub fn patch(self: *AnyChannelT, data: Data) !void {
@@ -98,17 +103,83 @@ pub fn AnyChannel(comptime channel_type: Type, comptime used_fields: []const [:0
                     },
                 }
             }
+
+            if (hasField("permission_overwrites")) {
+                switch (data.permission_overwrites) {
+                    .not_given => {},
+                    .val => |data_permission_overwrites| {
+                        var permission_overwrites: std.ArrayListUnmanaged(Permissions.Overwrite) = try .initCapacity(allocator, data_permission_overwrites.len);
+                        defer permission_overwrites.deinit(allocator);
+
+                        for (data_permission_overwrites) |overwrite_data| {
+                            const overwrite: Permissions.Overwrite = try .parseFromGatewayData(overwrite_data);
+                            permission_overwrites.appendAssumeCapacity(overwrite);
+                        }
+
+                        allocator.free(self.permission_overwrites);
+                        self.meta.patch(.permission_overwrites, try permission_overwrites.toOwnedSlice(allocator));
+                    },
+                }
+            }
         }
 
         pub fn createMessage(self: *AnyChannelT, content: []const u8) !*Message {
             comptime if (!channel_type.messageable()) @compileError("Cannot create messages in " ++ @tagName(channel_type) ++ " channels");
             return try self.context.createMessage(self.id, content);
         }
+
+        pub fn roleOverwrite(self: *AnyChannelT, role_id: Snowflake) ?Permissions.Overwrite {
+            return for (self.permission_overwrites) |overwrite| {
+                if (overwrite.type == .role and overwrite.id == role_id) break overwrite;
+            } else null;
+        }
+
+        pub fn memberOverwrite(self: *AnyChannelT, member_user_id: Snowflake) ?Permissions.Overwrite {
+            return for (self.permission_overwrites) |overwrite| {
+                if (overwrite.type == .member and overwrite.id == member_user_id) break overwrite;
+            } else null;
+        }
+
+        pub fn computePermissionsForMember(self: *AnyChannelT, member: *Guild.Member) Permissions {
+            var member_permissions = member.computePermissions();
+
+            if (member_permissions.administrator) return .all;
+
+            if (self.roleOverwrite(self.guild.id)) |overwrite| { // everyone
+                member_permissions = member_permissions.withDenied(overwrite.deny).withAllowed(overwrite.allow);
+            }
+
+            var allow_permissions: Permissions = .{};
+            var deny_permissions: Permissions = .{};
+            for (self.permission_overwrites) |overwrite| {
+                switch (overwrite.type) {
+                    .member => {},
+                    .role => {
+                        const has_role = for (member.roles) |role| {
+                            if (role.id == overwrite.id) break true;
+                        } else false;
+                        if (has_role) {
+                            allow_permissions = allow_permissions.withAllowed(overwrite.allow);
+                            deny_permissions = deny_permissions.withDenied(overwrite.deny);
+                        }
+                    },
+                }
+            }
+            member_permissions = member_permissions.withDenied(deny_permissions).withAllowed(allow_permissions);
+
+            const member_overwrite = for (self.permission_overwrites) |overwrite| {
+                if (overwrite.type == .member and overwrite.id == member.id) break overwrite;
+            } else null;
+            if (member_overwrite) |overwrite| {
+                member_permissions = member_permissions.withDenied(overwrite.deny).withAllowed(overwrite.allow);
+            }
+            return member_permissions;
+        }
     };
 }
 
 pub const Inner = union(Type) {
-    const in_guild: []const [:0]const u8 = &.{"guild"};
+    const in_guild: []const [:0]const u8 = &.{ "guild", "permission_overwrites" };
     const has_name: []const [:0]const u8 = &.{"name"};
 
     unknown: void,

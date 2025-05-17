@@ -17,24 +17,20 @@ const Handler = struct {
     }
 
     pub fn messageCreate(self: *Handler, message_create_event: zeppelin.Event.MessageCreate) !void {
-        if (self.own_user.id == message_create_event.message.author.id) return;
-
         const message = message_create_event.message;
+
+        if (self.own_user.id == message.author.id) return;
+
+        if (!message.meta.queried(.member)) return;
+
+        std.log.info("permissions: {}", .{message.channel.inner.guild_text.computePermissionsForMember(message.member)});
 
         var dynamic_buffer: std.ArrayListUnmanaged(u8) = .empty;
         defer dynamic_buffer.deinit(self.client.allocator);
 
         const writer = dynamic_buffer.writer(self.client.allocator);
-
-        try writer.print("Your roles sir: ", .{});
-        for (0.., message.member.roles) |i, role| {
-            if (i != 0) {
-                try writer.print(", ", .{});
-            }
-            try writer.print(" {s}", .{role.name});
-        }
-
-        _ = try message.channel.inner.guild_text.createMessage(dynamic_buffer.items);
+        _ = writer;
+        // _ = try message.channel.inner.guild_text.createMessage(dynamic_buffer.items);
     }
 };
 
