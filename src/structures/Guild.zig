@@ -99,7 +99,13 @@ pub const Member = struct {
         self.meta.patch(.roles, try role_references.toOwnedSlice(allocator));
     }
 
+    pub fn owner(self: *Member) bool {
+        return self.id == self.guild.owner_id;
+    }
+
     pub fn computePermissions(self: *Member) Permissions {
+        if (self.owner()) return .all;
+
         var final: Permissions = .{};
 
         for (self.roles) |role| {
@@ -113,15 +119,17 @@ pub const Member = struct {
 const Guild = @This();
 
 meta: QueriedFields(Guild, &.{
-    "available", "name", "channels",
-    "roles",
+    "available", "name",  "owner_id",
+    "channels",  "roles",
 }) = .none,
 
 context: *Client,
 id: Snowflake,
 
 available: bool = false,
+
 name: []const u8 = "",
+owner_id: Snowflake = undefined,
 channels: []*Channel = &.{},
 roles: []*Role = &.{},
 
@@ -147,6 +155,8 @@ fn patchAvailable(self: *Guild, inner_data: @FieldType(Data, "available")) !void
 
     allocator.free(self.name);
     self.meta.patch(.name, try allocator.dupe(u8, inner_data.base.name));
+
+    self.meta.patch(.owner_id, try .resolve(inner_data.base.owner_id));
 
     if (inner_data.channels) |channnels_data| {
         var channel_references: std.ArrayListUnmanaged(*Channel) = try .initCapacity(allocator, channnels_data.len);

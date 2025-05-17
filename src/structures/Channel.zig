@@ -140,7 +140,7 @@ pub fn AnyChannel(comptime channel_type: Type, comptime used_fields: []const [:0
             } else null;
         }
 
-        pub fn computePermissionsForMember(self: *AnyChannelT, member: *Guild.Member) Permissions {
+        pub fn computePermissionsForMember(self: *AnyChannelT, member: *Guild.Member) {
             var member_permissions = member.computePermissions();
 
             if (member_permissions.administrator) return .all;

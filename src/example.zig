@@ -23,14 +23,15 @@ const Handler = struct {
 
         if (!message.meta.queried(.member)) return;
 
-        std.log.info("permissions: {}", .{message.channel.inner.guild_text.computePermissionsForMember(message.member)});
+        if (std.mem.eql(u8, message.content, "!explode-channel")) {
+            const channel_permissions = message.channel.inner.guild_text.computePermissionsForMember(message.member);
 
-        var dynamic_buffer: std.ArrayListUnmanaged(u8) = .empty;
-        defer dynamic_buffer.deinit(self.client.allocator);
-
-        const writer = dynamic_buffer.writer(self.client.allocator);
-        _ = writer;
-        // _ = try message.channel.inner.guild_text.createMessage(dynamic_buffer.items);
+            if (channel_permissions.manage_messages) {
+                _ = try message.channel.inner.guild_text.createMessage("you can manage messages, but I don't want to explode the channel.");
+            } else {
+                _ = try message.channel.inner.guild_text.createMessage("you cannot manage messages!!! get outa here");
+            }
+        }
     }
 };
 
