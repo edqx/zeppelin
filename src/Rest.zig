@@ -1,14 +1,13 @@
 const std = @import("std");
+const wardrobe = @import("wardrobe");
+
 const Authentication = @import("authentication.zig").Authentication;
 
 const Rest = @This();
 
 pub const Request = struct {
-    pub const BodyKind = enum {
-        json,
-    };
-
     arena: std.heap.ArenaAllocator,
+    random: std.Random,
     http_request: std.http.Client.Request,
 
     pub fn deinit(self: *Request) void {
@@ -20,18 +19,27 @@ pub const Request = struct {
         return self.http_request.writer();
     }
 
-    pub fn begin(self: *Request, kind: BodyKind) !switch (kind) {
-        .json => @TypeOf(std.json.writeStream(self.writer(), .{})),
-    } {
-        self.http_request.headers.content_type = .{ .override = switch (kind) {
-            .json => "application/json",
-        } };
+    pub fn beginJson(self: *Request) !@TypeOf(std.json.writeStream(self.writer(), .{})) {
+        std.http_request.headers.content_type = .{ .override = "application/json" };
 
         try self.http_request.send();
 
-        return switch (kind) {
-            .json => std.json.writeStream(self.writer(), .{}),
-        };
+        return std.json.writeStream(self.writer(), .{});
+    }
+
+    pub fn beginFormData(self: *Request) !@TypeOf(wardrobe.writeStream(undefined, self.writer())) {
+        const allocator = self.arena.allocator();
+
+        const boundary: wardrobe.Boundary = .entropy("ZeppelinBoundary", self.random);
+
+        const content_type_header = try allocator.dupe(u8, boundary.contentType());
+        errdefer allocator.free(content_type_header);
+
+        self.http_request.headers.content_type = .{ .override = content_type_header };
+
+        try self.http_request.send();
+
+        return wardrobe.writeStream(boundary, self.writer());
     }
 
     pub fn fetchJson(self: *Request, comptime ResponseData: type) !ResponseData {
@@ -56,6 +64,8 @@ allocator: std.mem.Allocator,
 authentication: Authentication,
 http_client: std.http.Client,
 
+default_prng: std.Random.DefaultPrng,
+
 pub fn init(allocator: std.mem.Allocator, authentication: Authentication) Rest {
     return .{
         .allocator = allocator,
@@ -63,6 +73,7 @@ pub fn init(allocator: std.mem.Allocator, authentication: Authentication) Rest {
         .http_client = .{
             .allocator = allocator,
         },
+        .default_prng = .init(@intCast(std.time.microTimestamp())),
     };
 }
 
@@ -99,6 +110,7 @@ pub fn create(
 
     return .{
         .arena = arena,
+        .random = self.default_prng.random(),
         .http_request = req,
     };
 }

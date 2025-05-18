@@ -1,5 +1,8 @@
 const std = @import("std");
 const websocket = @import("websocket");
+const wardrobe = @import("wardrobe");
+
+const base64Writer = @import("base64_writer.zig").base64Writer;
 
 const gateway = @import("gateway.zig");
 const gateway_message = @import("gateway_message.zig");
@@ -320,14 +323,25 @@ pub fn createMessage(self: *Client, channel_id: Snowflake, content: []const u8) 
     });
     defer req.deinit();
 
-    var json_writer = try req.begin(.json);
+    var form_writer = try req.beginFormData();
 
-    try json_writer.beginObject();
+    try form_writer.beginTextEntry("payload_json");
 
-    try json_writer.objectField("content");
-    try json_writer.write(content);
+    {
+        var json_writer = std.json.writeStream(form_writer.writer(), .{});
 
-    try json_writer.endObject();
+        try json_writer.beginObject();
+
+        {
+            try json_writer.objectField("content");
+            try json_writer.write(content);
+        }
+        try json_writer.endObject();
+    }
+
+    try form_writer.endEntry();
+
+    try form_writer.endEntries();
 
     const message_response = try req.fetchJson(gateway_message.Message);
     return try self.global_cache.messages.patch(self, try .resolve(message_response.id), .{
