@@ -77,12 +77,28 @@ pub const Mention = union(enum) {
 
 allocator: std.mem.Allocator,
 
-contents: std.ArrayListUnmanaged(u8) = .empty,
+content: std.ArrayListUnmanaged(u8) = .empty,
 
-pub fn deinit(self: *MessageBuilder) void {
-    self.contents.deinit(self.allocator);
+pub fn simple(allocator: std.mem.Allocator, comptime fmt: []const u8, args: anytype) !MessageBuilder {
+    var builder: MessageBuilder = .{ .allocator = allocator };
+    try builder.writer().print(fmt, args);
+    return builder;
+}
+
+pub fn deinit(self: MessageBuilder) void {
+    var s = self; // hack to deinit ArrayList without taking pointer
+    s.content.deinit(s.allocator);
 }
 
 pub fn writer(self: *MessageBuilder) std.ArrayListUnmanaged(u8).Writer {
-    return self.contents.writer(self.allocator);
+    return self.content.writer(self.allocator);
+}
+
+pub fn jsonStringify(self: MessageBuilder, jw: anytype) !void {
+    try jw.beginObject();
+    {
+        try jw.objectField("content");
+        try jw.write(self.content.items);
+    }
+    try jw.endObject();
 }

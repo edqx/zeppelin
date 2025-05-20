@@ -141,9 +141,14 @@ pub fn AnyChannel(comptime channel_type: Type, comptime used_fields: []const [:0
             }
         }
 
-        pub fn createMessage(self: *AnyChannelT, builder: MessageBuilder) !*Message {
+        pub fn messageWriter(self: *AnyChannelT) !Client.MessageWriter {
             comptime if (!channel_type.messageable()) @compileError("Cannot create messages in " ++ @tagName(channel_type) ++ " channels");
-            return try self.context.createMessage(self.id, builder);
+            return try self.context.messageWriter(self.id);
+        }
+
+        pub fn createMessage(self: *AnyChannelT, message_builder: MessageBuilder) !*Message {
+            comptime if (!channel_type.messageable()) @compileError("Cannot create messages in " ++ @tagName(channel_type) ++ " channels");
+            return try self.context.createMessage(self.id, message_builder);
         }
 
         pub fn roleOverwrite(self: *AnyChannelT, role_id: Snowflake) ?Permissions.Overwrite {

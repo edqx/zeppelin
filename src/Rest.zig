@@ -10,6 +10,10 @@ pub const Request = struct {
     random: std.Random,
     http_request: std.http.Client.Request,
 
+    pub const Writer = std.http.Client.Request.Writer;
+    pub const JsonWriter = std.json.WriteStream(Writer, .{ .checked_to_fixed_depth = 256 });
+    pub const FormDataWriter = wardrobe.WriteStream(Writer);
+
     pub fn deinit(self: *Request) void {
         self.http_request.deinit();
         self.arena.deinit();
@@ -19,7 +23,7 @@ pub const Request = struct {
         return self.http_request.writer();
     }
 
-    pub fn beginJson(self: *Request) !@TypeOf(std.json.writeStream(self.writer(), .{})) {
+    pub fn beginJson(self: *Request) !JsonWriter {
         std.http_request.headers.content_type = .{ .override = "application/json" };
 
         try self.http_request.send();
@@ -27,7 +31,7 @@ pub const Request = struct {
         return std.json.writeStream(self.writer(), .{});
     }
 
-    pub fn beginFormData(self: *Request) !@TypeOf(wardrobe.writeStream(undefined, self.writer())) {
+    pub fn beginFormData(self: *Request) !FormDataWriter {
         const allocator = self.arena.allocator();
 
         const boundary: wardrobe.Boundary = .entropy("ZeppelinBoundary", self.random);

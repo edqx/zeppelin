@@ -17,30 +17,61 @@ const Handler = struct {
     }
 
     pub fn messageCreate(self: *Handler, message_create_event: zeppelin.Event.MessageCreate) !void {
+        const allocator = self.client.allocator;
         const message = message_create_event.message;
 
         if (self.own_user.id == message.author.id) return;
 
         if (!message.meta.queried(.member)) return;
 
+        const text_channel = &message.channel.inner.guild_text;
+
+        if (std.mem.eql(u8, message.content, "!ping")) {
+            _ = try text_channel.createMessage(try .simple(allocator, "Pong!", .{}));
+        }
+
         if (std.mem.eql(u8, message.content, "!explode-channel")) {
-            var builder: zeppelin.MessageBuilder = .{ .allocator = self.client.allocator };
+            var builder: zeppelin.MessageBuilder = .{ .allocator = allocator };
             defer builder.deinit();
 
             try builder.writer().print("Hello {}!", .{message.author.mention()});
 
-            _ = try message.channel.inner.guild_text.createMessage(builder);
+            _ = try text_channel.createMessage(builder);
         }
 
         if (std.mem.eql(u8, message.content, "!hello-barney")) {
             _ = try message.channel.inner.guild_text.createMessage(blk: {
-                var builder: zeppelin.MessageBuilder = .{ .allocator = self.client.allcator };
+                var builder: zeppelin.MessageBuilder = .{ .allocator = allocator };
                 errdefer builder.deinit();
 
                 try builder.writer().print("Hello {}!", .{message.author.mention()});
 
                 break :blk builder;
             });
+        }
+
+        if (std.mem.eql(u8, message.content, "!send-me-an-image")) {
+            var message_writer = try text_channel.messageWriter();
+            defer message_writer.deinit();
+
+            try message_writer.write(try .simple(allocator, "Here's a message, .{}", .{message.author.mention()}));
+
+            try message_writer.beginAttachment("image/jpg", "michael.jpg");
+
+            {
+                var file = try std.fs.cwd().openFile("michael.jpg", .{});
+                defer file.close();
+
+                var fifo: std.fifo.LinearFifo(u8, .{ .Static = 4096 }) = .init();
+                defer fifo.deinit();
+
+                try fifo.pump(file.reader(), message_writer.writer());
+            }
+
+            try message_writer.end();
+
+            const created_message = try message_writer.create();
+            std.log.info("message created with id {}", .{created_message.id});
         }
     }
 };

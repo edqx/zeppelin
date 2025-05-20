@@ -317,51 +317,88 @@ pub fn receiveAndDispatch(self: *Client, handler: anytype) !void {
     }
 }
 
-pub fn createMessage(self: *Client, channel_id: Snowflake, message_builder: MessageBuilder) !*Message {
-    defer message_builder.deinit();
+pub const MessageWriter = struct {
+    client: *Client,
 
+    req: Rest.Request,
+    form_writer: Rest.Request.FormDataWriter,
+
+    added_message_data: bool = false,
+    num_files: usize = 0,
+
+    pub fn deinit(self: *MessageWriter) void {
+        self.req.deinit();
+    }
+
+    fn assertNoMessageData(self: *MessageWriter) void {
+        std.debug.assert(!self.added_message_data);
+        self.added_message_data = true;
+    }
+
+    pub fn write(self: *MessageWriter, message_builder: MessageBuilder) !void {
+        self.assertNoMessageData();
+        try self.form_writer.beginTextEntry("payload_json");
+
+        {
+            var json_writer = std.json.writeStream(self.form_writer.writer(), .{});
+            try json_writer.write(message_builder);
+        }
+
+        try self.form_writer.endEntry();
+    }
+
+    pub fn writer(self: *MessageWriter) Rest.Request.Writer {
+        return self.form_writer.writer();
+    }
+
+    pub fn beginContent(self: *MessageWriter) !void {
+        self.assertNoMessageData();
+        try self.form_writer.beginTextEntry("content");
+    }
+
+    pub fn beginAttachment(self: *MessageWriter, file_type: []const u8, file_name: []const u8) !void {
+        defer self.num_files += 1;
+
+        var buf: [16]u8 = undefined;
+        const entry_name = try std.fmt.bufPrint(&buf, "files[{d}]", .{self.num_files});
+
+        try self.form_writer.beginFileEntry(entry_name, file_type, file_name);
+    }
+
+    pub fn end(self: *MessageWriter) !void {
+        try self.form_writer.endEntry();
+    }
+
+    pub fn create(self: *MessageWriter) !*Message {
+        try self.form_writer.endEntries();
+        const message_response = try self.req.fetchJson(gateway_message.Message);
+        return try self.client.global_cache.messages.patch(self.client, try .resolve(message_response.id), .{
+            .base = message_response,
+            .guild_id = null,
+            .member = null,
+            .mentions = &.{},
+        });
+    }
+};
+
+pub fn messageWriter(self: *Client, channel_id: Snowflake) !MessageWriter {
     var req = try self.rest_client.create(.POST, endpoints.create_message, .{
         .channel_id = channel_id,
     });
-    defer req.deinit();
+    errdefer req.deinit();
 
-    var form_writer = try req.beginFormData();
+    const form_writer = try req.beginFormData();
 
-    try form_writer.beginTextEntry("payload_json");
+    return .{
+        .client = self,
+        .req = req,
+        .form_writer = form_writer,
+    };
+}
 
-    {
-        var json_writer = std.json.writeStream(form_writer.writer(), .{});
-
-        try json_writer.beginObject();
-
-        {
-            try json_writer.objectField("content");
-            try json_writer.write(message_builder.contents.items);
-        }
-        try json_writer.endObject();
-    }
-
-    try form_writer.endEntry();
-
-    // try form_writer.beginFileEntry("files[0]", "image/png", "barney.png");
-    // {
-    //     var barney_file = try std.fs.cwd().openFile("barney-sticker.png", .{});
-    //     defer barney_file.close();
-
-    //     const barney_file_data = try barney_file.readToEndAlloc(self.allocator, std.math.maxInt(usize));
-    //     defer self.allocator.free(barney_file_data);
-
-    //     try form_writer.writer().writeAll(barney_file_data);
-    // }
-    // try form_writer.endEntry();
-
-    try form_writer.endEntries();
-
-    const message_response = try req.fetchJson(gateway_message.Message);
-    return try self.global_cache.messages.patch(self, try .resolve(message_response.id), .{
-        .base = message_response,
-        .guild_id = null,
-        .member = null,
-        .mentions = &.{},
-    });
+pub fn createMessage(self: *Client, channel_id: Snowflake, message_builder: MessageBuilder) !*Message {
+    defer message_builder.deinit();
+    var writer = try self.messageWriter(channel_id);
+    try writer.write(message_builder);
+    return try writer.create();
 }
