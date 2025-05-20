@@ -24,13 +24,23 @@ const Handler = struct {
         if (!message.meta.queried(.member)) return;
 
         if (std.mem.eql(u8, message.content, "!explode-channel")) {
-            const channel_permissions = message.channel.inner.guild_text.computePermissionsForMember(message.member);
+            var builder: zeppelin.MessageBuilder = .{ .allocator = self.client.allocator };
+            defer builder.deinit();
 
-            if (channel_permissions.manage_messages) {
-                _ = try message.channel.inner.guild_text.createMessage("you can manage messages, but I don't want to explode the channel.");
-            } else {
-                _ = try message.channel.inner.guild_text.createMessage("you cannot manage messages!!! get outa here");
-            }
+            try builder.writer().print("Hello {}!", .{message.author.mention()});
+
+            _ = try message.channel.inner.guild_text.createMessage(builder);
+        }
+
+        if (std.mem.eql(u8, message.content, "!hello-barney")) {
+            _ = try message.channel.inner.guild_text.createMessage(blk: {
+                var builder: zeppelin.MessageBuilder = .{ .allocator = self.client.allcator };
+                errdefer builder.deinit();
+
+                try builder.writer().print("Hello {}!", .{message.author.mention()});
+
+                break :blk builder;
+            });
         }
     }
 };

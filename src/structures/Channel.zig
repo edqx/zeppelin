@@ -4,6 +4,8 @@ const Snowflake = @import("../snowflake.zig").Snowflake;
 const QueriedFields = @import("../queryable.zig").QueriedFields;
 const Client = @import("../Client.zig");
 
+const MessageBuilder = @import("../MessageBuilder.zig");
+const Mention = MessageBuilder.Mention;
 const Permissions = @import("../permissions.zig").Permissions;
 
 const gateway_message = @import("../gateway_message.zig");
@@ -139,9 +141,9 @@ pub fn AnyChannel(comptime channel_type: Type, comptime used_fields: []const [:0
             }
         }
 
-        pub fn createMessage(self: *AnyChannelT, content: []const u8) !*Message {
+        pub fn createMessage(self: *AnyChannelT, builder: MessageBuilder) !*Message {
             comptime if (!channel_type.messageable()) @compileError("Cannot create messages in " ++ @tagName(channel_type) ++ " channels");
-            return try self.context.createMessage(self.id, content);
+            return try self.context.createMessage(self.id, builder);
         }
 
         pub fn roleOverwrite(self: *AnyChannelT, role_id: Snowflake) ?Permissions.Overwrite {
@@ -248,4 +250,8 @@ pub fn patch(self: *Channel, data: Data) !void {
     }
 
     self.meta.patch(.inner, inner);
+}
+
+pub fn mention(self: *Channel) Mention {
+    return .{ .channel = self.id };
 }

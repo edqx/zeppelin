@@ -2,8 +2,6 @@ const std = @import("std");
 const websocket = @import("websocket");
 const wardrobe = @import("wardrobe");
 
-const base64Writer = @import("base64_writer.zig").base64Writer;
-
 const gateway = @import("gateway.zig");
 const gateway_message = @import("gateway_message.zig");
 const endpoints = @import("constants.zig").endpoints;
@@ -12,6 +10,8 @@ const Snowflake = @import("snowflake.zig").Snowflake;
 
 const Authentication = @import("authentication.zig").Authentication;
 const Cache = @import("cache.zig").Cache;
+
+const MessageBuilder = @import("MessageBuilder.zig");
 
 const Rest = @import("Rest.zig");
 
@@ -317,7 +317,9 @@ pub fn receiveAndDispatch(self: *Client, handler: anytype) !void {
     }
 }
 
-pub fn createMessage(self: *Client, channel_id: Snowflake, content: []const u8) !*Message {
+pub fn createMessage(self: *Client, channel_id: Snowflake, message_builder: MessageBuilder) !*Message {
+    defer message_builder.deinit();
+
     var req = try self.rest_client.create(.POST, endpoints.create_message, .{
         .channel_id = channel_id,
     });
@@ -334,7 +336,7 @@ pub fn createMessage(self: *Client, channel_id: Snowflake, content: []const u8) 
 
         {
             try json_writer.objectField("content");
-            try json_writer.write(content);
+            try json_writer.write(message_builder.contents.items);
         }
         try json_writer.endObject();
     }
