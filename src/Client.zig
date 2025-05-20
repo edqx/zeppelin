@@ -341,6 +341,18 @@ pub fn createMessage(self: *Client, channel_id: Snowflake, content: []const u8) 
 
     try form_writer.endEntry();
 
+    // try form_writer.beginFileEntry("files[0]", "image/png", "barney.png");
+    // {
+    //     var barney_file = try std.fs.cwd().openFile("barney-sticker.png", .{});
+    //     defer barney_file.close();
+
+    //     const barney_file_data = try barney_file.readToEndAlloc(self.allocator, std.math.maxInt(usize));
+    //     defer self.allocator.free(barney_file_data);
+
+    //     try form_writer.writer().writeAll(barney_file_data);
+    // }
+    // try form_writer.endEntry();
+
     try form_writer.endEntries();
 
     const message_response = try req.fetchJson(gateway_message.Message);

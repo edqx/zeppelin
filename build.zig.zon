@@ -8,8 +8,8 @@
             .hash = "websocket-0.1.0-ZPISdYBIAwB1yO6AFDHRHLaZSmpdh4Bz4dCmaQUqNNWh",
         },
         .wardrobe = .{
-            .url = "git+https://github.com/edqx/wardrobe#d2ede86b0178db859b50a102c4cb5680e151c6e5",
-            .hash = "wardrobe-0.0.1-Hd1QO3wfAABK7dxcfRqbbfVfOmQMvL_Z2XWjRTfgPDl_",
+            .url = "git+https://github.com/edqx/wardrobe#3895b779d4605f97ed3c8fee1c4982e0f80d4655",
+            .hash = "wardrobe-0.0.1-Hd1QO7BgAAAM9mdmUrWUnT8Hv5BcsEBLvfT6-N5N1KMB",
         },
     },
     .paths = .{
