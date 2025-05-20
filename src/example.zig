@@ -17,7 +17,7 @@ const Handler = struct {
     }
 
     pub fn messageCreate(self: *Handler, message_create_event: zeppelin.Event.MessageCreate) !void {
-        const allocator = self.client.allocator;
+        const allocator = message_create_event.arena;
         const message = message_create_event.message;
 
         if (self.own_user.id == message.author.id) return;

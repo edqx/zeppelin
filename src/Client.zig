@@ -31,14 +31,17 @@ pub const Event = union(enum) {
     };
 
     pub const Ready = struct {
+        arena: std.mem.Allocator,
         user: *User,
     };
 
     pub const GuildCreate = struct {
+        arena: std.mem.Allocator,
         guild: *Guild,
     };
 
     pub const MessageCreate = struct {
+        arena: std.mem.Allocator,
         message: *Message,
     };
 
@@ -173,7 +176,7 @@ fn processReadyEvent(self: *Client, arena: std.mem.Allocator, json: std.json.Val
     self.maybe_reconnect_options.?.session_id = session_id;
     self.maybe_reconnect_options.?.host = resume_gateway_url;
 
-    return .{ .user = user };
+    return .{ .arena = arena, .user = user };
 }
 
 fn processGuildCreate(self: *Client, arena: std.mem.Allocator, json: std.json.Value) !Event.GuildCreate {
@@ -204,7 +207,7 @@ fn processGuildCreate(self: *Client, arena: std.mem.Allocator, json: std.json.Va
         ),
     };
 
-    return .{ .guild = guild };
+    return .{ .arena = arena, .guild = guild };
 }
 
 fn processMessageCreate(self: *Client, arena: std.mem.Allocator, json: std.json.Value) !Event.MessageCreate {
@@ -235,15 +238,14 @@ fn processMessageCreate(self: *Client, arena: std.mem.Allocator, json: std.json.
         },
     );
 
-    return .{ .message = message };
+    return .{ .arena = arena, .message = message };
 }
 
-pub fn receive(self: *Client) !Event {
+pub fn receive(self: *Client, arena: *std.heap.ArenaAllocator) !Event {
     const gateway_client: *gateway.Client = &(self.maybe_gateway_client orelse return error.NotConnected);
 
     while (true) {
-        var arena: std.heap.ArenaAllocator = .init(self.allocator);
-        defer arena.deinit();
+        _ = arena.reset(.retain_capacity);
 
         const allocator = arena.allocator();
 
@@ -308,7 +310,10 @@ pub fn receive(self: *Client) !Event {
 }
 
 pub fn receiveAndDispatch(self: *Client, handler: anytype) !void {
-    const event = try self.receive();
+    var arena: std.heap.ArenaAllocator = .init(self.allocator);
+    defer arena.deinit();
+
+    const event = try self.receive(&arena);
 
     switch (event) {
         .ready => |ev| if (@hasDecl(@TypeOf(handler.*), "ready")) try handler.ready(ev),
