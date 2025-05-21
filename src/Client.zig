@@ -249,6 +249,8 @@ fn processMessageDelete(self: *Client, arena: std.mem.Allocator, json: std.json.
     );
 
     const message = try self.global_cache.messages.touch(self, try .resolve(delete_data.id));
+    message.deleted = true;
+
     const channel = try self.global_cache.channels.touch(self, try .resolve(delete_data.channel_id));
 
     message.meta.patch(.channel, channel);

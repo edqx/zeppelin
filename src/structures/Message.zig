@@ -93,6 +93,8 @@ author: *User = undefined,
 member: *Guild.Member = undefined,
 content: []const u8 = "",
 
+deleted: bool = false,
+
 pub fn deinit(self: *Message) void {
     const allocator = self.context.allocator;
     allocator.free(self.content);
