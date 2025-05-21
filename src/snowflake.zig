@@ -6,14 +6,16 @@ pub const Snowflake = packed struct(u64) {
     pub const nil: Snowflake = @bitCast(@as(u64, 0));
 
     pub fn resolve(ref: anytype) !Snowflake {
-        const ref_type = @TypeOf(ref);
-        if (ref_type == Snowflake) return ref;
-        if (ref_type == Int) return @bitCast(ref);
-        if (ref_type == []u8 or ref_type == []const u8) {
-            const snowflake_int = try std.fmt.parseInt(Int, ref, 10);
-            return resolve(snowflake_int);
-        }
-        @compileError("Unknown reference type to resolve: " ++ @typeName(ref_type));
+        const RefT = @TypeOf(ref);
+        if (RefT == Snowflake) return ref;
+        if (RefT == Int) return @bitCast(ref);
+        // if (@TypeOf(ref, @as([]const u8, undefined)) == []const u8) {
+        //     const snowflake_int = try std.fmt.parseInt(Int, ref, 10);
+        //     return resolve(snowflake_int);
+        // }
+        // @compileError("Unknown reference type to resolve: " ++ @typeName(RefT));
+        const snowflake_int = try std.fmt.parseInt(Int, ref, 10);
+        return resolve(snowflake_int);
     }
 
     increment: u12,

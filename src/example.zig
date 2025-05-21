@@ -24,6 +24,8 @@ const Handler = struct {
 
         if (!message.meta.queried(.member)) return;
 
+        try message.createReaction(.{ .custom = .{ .name = "applecat", .id = try .resolve("854479777130217492") } });
+
         if (std.mem.eql(u8, message.content, "!cat")) {
             const dm_channel = try message.author.createDM();
 

@@ -10,6 +10,8 @@ pub const Request = struct {
     random: std.Random,
     http_request: std.http.Client.Request,
 
+    sent: bool = false,
+
     pub const Writer = std.http.Client.Request.Writer;
     pub const JsonWriter = std.json.WriteStream(Writer, .{ .checked_to_fixed_depth = 256 });
     pub const FormDataWriter = wardrobe.WriteStream(Writer);
@@ -27,6 +29,7 @@ pub const Request = struct {
         self.http_request.headers.content_type = .{ .override = "application/json" };
 
         try self.http_request.send();
+        self.sent = true;
 
         return std.json.writeStream(self.writer(), .{});
     }
@@ -42,17 +45,25 @@ pub const Request = struct {
         self.http_request.headers.content_type = .{ .override = content_type_header };
 
         try self.http_request.send();
+        self.sent = true;
 
         return wardrobe.writeStream(boundary, self.writer());
     }
 
-    pub fn fetchJson(self: *Request, comptime ResponseData: type) !ResponseData {
-        const allocator = self.arena.allocator();
+    pub fn fetch(self: *Request) !void {
+        if (!self.sent) try self.http_request.send();
+        self.sent = true;
 
         try self.http_request.finish();
         try self.http_request.wait();
 
-        if (self.http_request.response.status != .ok) return error.RequestError;
+        if (self.http_request.response.status.class() != .success) return error.RequestError;
+    }
+
+    pub fn fetchJson(self: *Request, comptime ResponseData: type) !ResponseData {
+        try self.fetch();
+
+        const allocator = self.arena.allocator();
 
         var json_reader = std.json.reader(allocator, self.http_request.reader());
         defer json_reader.deinit();

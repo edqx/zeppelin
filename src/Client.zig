@@ -430,3 +430,28 @@ pub fn createDM(self: *Client, user_id: Snowflake) !*Channel {
     const channel_response = try req.fetchJson(gateway_message.Channel);
     return try self.global_cache.channels.patch(self, try .resolve(channel_response.id), channel_response);
 }
+
+pub const ReactionAdd = union(enum) {
+    unicode: []const u8,
+    custom: struct {
+        name: []const u8,
+        id: Snowflake,
+    },
+
+    pub fn format(self: ReactionAdd, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        switch (self) {
+            .unicode => |str| try writer.print("{%}", .{@as(std.Uri.Component, .{ .raw = str })}),
+            .custom => |custom_emoji| try writer.print("{s}:{}", .{ custom_emoji.name, custom_emoji.id }),
+        }
+    }
+};
+
+pub fn createReaction(self: *Client, channel_id: Snowflake, message_id: Snowflake, reaction: ReactionAdd) !void {
+    var req = try self.rest_client.create(.PUT, endpoints.create_reaction, .{
+        .channel_id = channel_id,
+        .message_id = message_id,
+        .emoji_id = reaction,
+    });
+    errdefer req.deinit();
+    try req.fetch();
+}

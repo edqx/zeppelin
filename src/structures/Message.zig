@@ -4,6 +4,8 @@ const Snowflake = @import("../snowflake.zig").Snowflake;
 const QueriedFields = @import("../queryable.zig").QueriedFields;
 const Client = @import("../Client.zig");
 
+const ReactionAdd = Client.ReactionAdd;
+
 const Channel = @import("Channel.zig");
 const Guild = @import("Guild.zig");
 const User = @import("User.zig");
@@ -115,4 +117,8 @@ pub fn patch(self: *Message, data: Data) !void {
 
     allocator.free(self.content);
     self.meta.patch(.content, try allocator.dupe(u8, data.base.content));
+}
+
+pub fn createReaction(self: *Message, reaction: ReactionAdd) !void {
+    try self.context.createReaction(self.channel.id, self.id, reaction);
 }
