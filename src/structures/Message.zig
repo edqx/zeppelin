@@ -119,6 +119,10 @@ pub fn patch(self: *Message, data: Data) !void {
     self.meta.patch(.content, try allocator.dupe(u8, data.base.content));
 }
 
+pub fn delete(self: *Message) !void {
+    try self.context.deleteMessage(self.channel.id, self.id);
+}
+
 pub fn createReaction(self: *Message, reaction: ReactionAdd) !void {
     try self.context.createReaction(self.channel.id, self.id, reaction);
 }

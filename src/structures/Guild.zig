@@ -86,12 +86,12 @@ pub const Member = struct {
         defer role_references.deinit(allocator);
 
         const everyone_role = try self.guild.context.global_cache.roles.touch(self.guild.context, self.guild.id);
-        everyone_role.guild = self.guild;
+        everyone_role.meta.patch(.guild, self.guild);
         role_references.appendAssumeCapacity(everyone_role);
 
         for (data.roles) |role_id| {
             const role = try self.guild.context.global_cache.roles.touch(self.guild.context, try .resolve(role_id));
-            role.guild = self.guild;
+            role.meta.patch(.guild, self.guild);
             role_references.appendAssumeCapacity(role);
         }
 
@@ -192,7 +192,7 @@ fn patchAvailable(self: *Guild, inner_data: @FieldType(Data, "available")) !void
     for (inner_data.base.roles) |role_data| {
         const role = try self.context.global_cache.roles.patch(self.context, try .resolve(role_data.id), role_data);
         role_references.appendAssumeCapacity(role);
-        role.guild = self;
+        role.meta.patch(.guild, self);
     }
 
     allocator.free(self.roles);

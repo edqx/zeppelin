@@ -18,7 +18,7 @@ pub const Flags = packed struct(i32) {
     _packed1: enum(u31) { unset } = .unset,
 };
 
-meta: QueriedFields(Role, &.{ "name", "permissions", "mentionable" }) = .none,
+meta: QueriedFields(Role, &.{ "guild", "name", "permissions", "mentionable" }) = .none,
 
 context: *Client,
 id: Snowflake,

@@ -27,6 +27,7 @@ pub const DispatchType = enum {
     ready,
     guild_create,
     message_create,
+    message_delete,
 };
 
 pub const Event = union(DispatchType) {
@@ -45,15 +46,22 @@ pub const Event = union(DispatchType) {
         message: *Message,
     };
 
+    pub const MessageDelete = struct {
+        arena: std.mem.Allocator,
+        message: *Message,
+    };
+
     ready: Ready,
     guild_create: GuildCreate,
     message_create: MessageCreate,
+    message_delete: MessageDelete,
 };
 
 pub const dispatch_event_map: std.StaticStringMap(DispatchType) = .initComptime(.{
     .{ "READY", .ready },
     .{ "GUILD_CREATE", .guild_create },
     .{ "MESSAGE_CREATE", .message_create },
+    .{ "MESSAGE_DELETE", .message_delete },
 });
 
 pub const GlobalCache = struct {
@@ -155,10 +163,7 @@ fn processReadyEvent(self: *Client, arena: std.mem.Allocator, json: std.json.Val
         gateway_message.payload.Ready,
         arena,
         json,
-        .{
-            .allocate = .alloc_always,
-            .ignore_unknown_fields = true,
-        },
+        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
     );
 
     const user = try self.global_cache.users.patch(
@@ -184,10 +189,7 @@ fn processGuildCreate(self: *Client, arena: std.mem.Allocator, json: std.json.Va
         gateway_message.payload.GuildCreate,
         arena,
         json,
-        .{
-            .allocate = .alloc_always,
-            .ignore_unknown_fields = true,
-        },
+        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
     );
 
     const guild = switch (guild_data) {
@@ -215,10 +217,7 @@ fn processMessageCreate(self: *Client, arena: std.mem.Allocator, json: std.json.
         gateway_message.payload.MessageCreate,
         arena,
         json,
-        .{
-            .allocate = .alloc_always,
-            .ignore_unknown_fields = true,
-        },
+        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
     );
 
     const message = try self.global_cache.messages.patch(
@@ -241,6 +240,26 @@ fn processMessageCreate(self: *Client, arena: std.mem.Allocator, json: std.json.
     return .{ .arena = arena, .message = message };
 }
 
+fn processMessageDelete(self: *Client, arena: std.mem.Allocator, json: std.json.Value) !Event.MessageDelete {
+    const delete_data = try std.json.parseFromValueLeaky(
+        gateway_message.payload.MessageDelete,
+        arena,
+        json,
+        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
+    );
+
+    const message = try self.global_cache.messages.touch(self, try .resolve(delete_data.id));
+    const channel = try self.global_cache.channels.touch(self, try .resolve(delete_data.channel_id));
+
+    message.meta.patch(.channel, channel);
+    switch (delete_data.guild_id) {
+        .not_given => {},
+        .val => |guild_id| message.meta.patch(.guild, try self.global_cache.guilds.touch(self, try .resolve(guild_id))),
+    }
+
+    return .{ .arena = arena, .message = message };
+}
+
 pub fn receive(self: *Client, arena: *std.heap.ArenaAllocator) !Event {
     const gateway_client: *gateway.Client = &(self.maybe_gateway_client orelse return error.NotConnected);
 
@@ -254,15 +273,10 @@ pub fn receive(self: *Client, arena: *std.heap.ArenaAllocator) !Event {
                 const dispatch_event_type = dispatch_event_map.get(dispatch_event.name) orelse continue;
 
                 switch (dispatch_event_type) {
-                    .ready => {
-                        return .{ .ready = try self.processReadyEvent(allocator, dispatch_event.data_json) };
-                    },
-                    .guild_create => {
-                        return .{ .guild_create = try self.processGuildCreate(allocator, dispatch_event.data_json) };
-                    },
-                    .message_create => {
-                        return .{ .message_create = try self.processMessageCreate(allocator, dispatch_event.data_json) };
-                    },
+                    .ready => return .{ .ready = try self.processReadyEvent(allocator, dispatch_event.data_json) },
+                    .guild_create => return .{ .guild_create = try self.processGuildCreate(allocator, dispatch_event.data_json) },
+                    .message_create => return .{ .message_create = try self.processMessageCreate(allocator, dispatch_event.data_json) },
+                    .message_delete => return .{ .message_delete = try self.processMessageDelete(allocator, dispatch_event.data_json) },
                 }
             },
             .reconnect => {
@@ -319,6 +333,7 @@ pub fn receiveAndDispatch(self: *Client, handler: anytype) !void {
         .ready => |ev| if (@hasDecl(@TypeOf(handler.*), "ready")) try handler.ready(ev),
         .guild_create => |ev| if (@hasDecl(@TypeOf(handler.*), "guildCreate")) try handler.guildCreate(ev),
         .message_create => |ev| if (@hasDecl(@TypeOf(handler.*), "messageCreate")) try handler.messageCreate(ev),
+        .message_delete => |ev| if (@hasDecl(@TypeOf(handler.*), "messageDelete")) try handler.messageDelete(ev),
     }
 }
 
@@ -414,6 +429,15 @@ pub fn createMessage(self: *Client, channel_id: Snowflake, message_builder: Mess
     return try writer.create();
 }
 
+pub fn deleteMessage(self: *Client, channel_id: Snowflake, message_id: Snowflake) !void {
+    var req = try self.rest_client.create(.DELETE, endpoints.delete_message, .{
+        .channel_id = channel_id,
+        .message_id = message_id,
+    });
+    defer req.deinit();
+    try req.fetch();
+}
+
 pub fn createDM(self: *Client, user_id: Snowflake) !*Channel {
     var req = try self.rest_client.create(.POST, endpoints.create_dm, .{});
     errdefer req.deinit();
@@ -452,6 +476,6 @@ pub fn createReaction(self: *Client, channel_id: Snowflake, message_id: Snowflak
         .message_id = message_id,
         .emoji_id = reaction,
     });
-    errdefer req.deinit();
+    defer req.deinit();
     try req.fetch();
 }

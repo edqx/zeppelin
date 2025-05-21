@@ -24,6 +24,11 @@ const Handler = struct {
 
         if (!message.meta.queried(.member)) return;
 
+        if (std.mem.eql(u8, message.content, "!delete-me")) {
+            try message.delete();
+            return;
+        }
+
         try message.createReaction(.{ .custom = .{ .name = "applecat", .id = try .resolve("854479777130217492") } });
 
         if (std.mem.eql(u8, message.content, "!cat")) {
@@ -64,6 +69,17 @@ const Handler = struct {
             const created_message = try message_writer.create();
             std.log.info("message created with id {}", .{created_message.id});
         }
+    }
+
+    pub fn messageDelete(self: *Handler, message_delete_event: zeppelin.Event.MessageDelete) !void {
+        _ = self;
+
+        const allocator = message_delete_event.arena;
+        const message = message_delete_event.message;
+
+        if (!message.meta.queried(.content)) return;
+
+        _ = try message.channel.inner.guild_text.createMessage(try .simple(allocator, "babe don't delete your message: '{s}'", .{message.content}));
     }
 };
 

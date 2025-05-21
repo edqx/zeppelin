@@ -545,4 +545,10 @@ pub const payload = struct {
             };
         }
     };
+
+    pub const MessageDelete = struct {
+        id: Snowflake,
+        channel_id: Snowflake,
+        guild_id: Elective(Snowflake) = .not_given,
+    };
 };

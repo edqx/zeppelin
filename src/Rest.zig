@@ -116,7 +116,9 @@ pub fn create(
     var req = try self.http_client.open(method, try std.Uri.parse(formatted_uri), .{
         .server_header_buffer = server_header_buffer,
     });
-    req.transfer_encoding = .chunked;
+    if (method.requestHasBody()) {
+        req.transfer_encoding = .chunked;
+    }
 
     const authorization_header = try std.fmt.allocPrint(allocator, "Bot {s}", .{self.authentication.resolve()});
     errdefer allocator.free(authorization_header);
