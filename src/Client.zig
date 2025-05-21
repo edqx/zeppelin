@@ -23,13 +23,13 @@ const User = @import("structures/User.zig");
 
 const Client = @This();
 
-pub const Event = union(enum) {
-    pub const DispatchType = enum {
-        ready,
-        guild_create,
-        message_create,
-    };
+pub const DispatchType = enum {
+    ready,
+    guild_create,
+    message_create,
+};
 
+pub const Event = union(DispatchType) {
     pub const Ready = struct {
         arena: std.mem.Allocator,
         user: *User,
@@ -50,7 +50,7 @@ pub const Event = union(enum) {
     message_create: MessageCreate,
 };
 
-pub const dispatch_event_map: std.StaticStringMap(Event.DispatchType) = .initComptime(.{
+pub const dispatch_event_map: std.StaticStringMap(DispatchType) = .initComptime(.{
     .{ "READY", .ready },
     .{ "GUILD_CREATE", .guild_create },
     .{ "MESSAGE_CREATE", .message_create },
