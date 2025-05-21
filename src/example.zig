@@ -24,10 +24,10 @@ const Handler = struct {
 
         if (!message.meta.queried(.member)) return;
 
-        const text_channel = &message.channel.inner.guild_text;
-
         if (std.mem.eql(u8, message.content, "!cat")) {
-            var message_writer = try text_channel.messageWriter();
+            const dm_channel = try message.author.createDM();
+
+            var message_writer = try dm_channel.inner.dm.messageWriter();
             defer message_writer.deinit();
 
             try message_writer.write(try .simple(allocator, "here's a cat {}", .{message.author.mention()}));
@@ -55,54 +55,6 @@ const Handler = struct {
                 defer fifo.deinit();
 
                 try fifo.pump(req.reader(), message_writer.writer());
-            }
-
-            try message_writer.end();
-
-            const created_message = try message_writer.create();
-            std.log.info("message created with id {}", .{created_message.id});
-        }
-
-        if (std.mem.eql(u8, message.content, "!ping")) {
-            _ = try text_channel.createMessage(try .simple(allocator, "Pong!", .{}));
-        }
-
-        if (std.mem.eql(u8, message.content, "!explode-channel")) {
-            var builder: zeppelin.MessageBuilder = .{ .allocator = allocator };
-            defer builder.deinit();
-
-            try builder.writer().print("Hello {}!", .{message.author.mention()});
-
-            _ = try text_channel.createMessage(builder);
-        }
-
-        if (std.mem.eql(u8, message.content, "!hello-barney")) {
-            _ = try message.channel.inner.guild_text.createMessage(blk: {
-                var builder: zeppelin.MessageBuilder = .{ .allocator = allocator };
-                errdefer builder.deinit();
-
-                try builder.writer().print("Hello {}!", .{message.author.mention()});
-
-                break :blk builder;
-            });
-        }
-
-        if (std.mem.eql(u8, message.content, "!send-me-an-image")) {
-            var message_writer = try text_channel.messageWriter();
-            defer message_writer.deinit();
-
-            try message_writer.write(try .simple(allocator, "Here's a message, .{}", .{message.author.mention()}));
-
-            try message_writer.beginAttachment("image/jpg", "michael.jpg");
-
-            {
-                var file = try std.fs.cwd().openFile("michael.jpg", .{});
-                defer file.close();
-
-                var fifo: std.fifo.LinearFifo(u8, .{ .Static = 4096 }) = .init();
-                defer fifo.deinit();
-
-                try fifo.pump(file.reader(), message_writer.writer());
             }
 
             try message_writer.end();

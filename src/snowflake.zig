@@ -24,4 +24,10 @@ pub const Snowflake = packed struct(u64) {
     pub fn format(self: Snowflake, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try writer.print("{}", .{@as(Int, @bitCast(self))});
     }
+
+    pub fn jsonStringify(self: Snowflake, jw: anytype) !void {
+        try jw.beginWriteRaw();
+        try jw.stream.print("\"{}\"", .{self});
+        jw.endWriteRaw();
+    }
 };

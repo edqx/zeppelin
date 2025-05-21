@@ -413,3 +413,20 @@ pub fn createMessage(self: *Client, channel_id: Snowflake, message_builder: Mess
     try writer.write(message_builder);
     return try writer.create();
 }
+
+pub fn createDM(self: *Client, user_id: Snowflake) !*Channel {
+    var req = try self.rest_client.create(.POST, endpoints.create_dm, .{});
+    errdefer req.deinit();
+
+    var jw = try req.beginJson();
+
+    try jw.beginObject();
+    {
+        try jw.objectField("recipient_id");
+        try jw.write(user_id);
+    }
+    try jw.endObject();
+
+    const channel_response = try req.fetchJson(gateway_message.Channel);
+    return try self.global_cache.channels.patch(self, try .resolve(channel_response.id), channel_response);
+}

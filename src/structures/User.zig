@@ -6,6 +6,8 @@ const Client = @import("../Client.zig");
 
 const Mention = @import("../MessageBuilder.zig").Mention;
 
+const Channel = @import("Channel.zig");
+
 pub const Data = @import("../gateway_message.zig").User;
 
 const User = @This();
@@ -109,4 +111,8 @@ pub fn patch(self: *User, data: Data) !void {
 
 pub fn mention(self: *User) Mention {
     return .{ .user = self.id };
+}
+
+pub fn createDM(self: *User) !*Channel {
+    return try self.context.createDM(self.id);
 }

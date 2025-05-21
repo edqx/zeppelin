@@ -24,7 +24,7 @@ pub const Request = struct {
     }
 
     pub fn beginJson(self: *Request) !JsonWriter {
-        std.http_request.headers.content_type = .{ .override = "application/json" };
+        self.http_request.headers.content_type = .{ .override = "application/json" };
 
         try self.http_request.send();
 
