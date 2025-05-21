@@ -370,6 +370,12 @@ pub const MessageWriter = struct {
         try self.form_writer.beginFileEntry(entry_name, file_type, file_name);
     }
 
+    pub fn writeAttachment(self: *MessageWriter, file_type: []const u8, file_name: []const u8, file_data: []const u8) !void {
+        try self.beginAttachment(file_type, file_name);
+        try self.writer().writeAll(file_data);
+        try self.end();
+    }
+
     pub fn end(self: *MessageWriter) !void {
         try self.form_writer.endEntry();
     }

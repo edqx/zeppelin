@@ -26,6 +26,43 @@ const Handler = struct {
 
         const text_channel = &message.channel.inner.guild_text;
 
+        if (std.mem.eql(u8, message.content, "!cat")) {
+            var message_writer = try text_channel.messageWriter();
+            defer message_writer.deinit();
+
+            try message_writer.write(try .simple(allocator, "here's a cat {}", .{message.author.mention()}));
+
+            try message_writer.beginAttachment("image/png", "cat.png");
+
+            {
+                var http_client: std.http.Client = .{ .allocator = allocator };
+                defer http_client.deinit();
+
+                var buf: [8192]u8 = undefined;
+
+                var req = try http_client.open(
+                    .GET,
+                    try .parse("https://cataas.com/cat"),
+                    .{ .server_header_buffer = &buf },
+                );
+                defer req.deinit();
+
+                try req.send();
+                try req.finish();
+                try req.wait();
+
+                var fifo: std.fifo.LinearFifo(u8, .{ .Static = 4096 }) = .init();
+                defer fifo.deinit();
+
+                try fifo.pump(req.reader(), message_writer.writer());
+            }
+
+            try message_writer.end();
+
+            const created_message = try message_writer.create();
+            std.log.info("message created with id {}", .{created_message.id});
+        }
+
         if (std.mem.eql(u8, message.content, "!ping")) {
             _ = try text_channel.createMessage(try .simple(allocator, "Pong!", .{}));
         }
