@@ -241,10 +241,9 @@ fn processGuildMemberAdd(self: *Client, arena: std.mem.Allocator, json: std.json
         }, // what can we do with a guild member with no user?
         .val => |user_data| {
             const user = try users_cache.patch(self, try .resolve(user_data.id), user_data);
-
             const guild = try guilds_cache.touch(self, try .resolve(guild_id));
-
             const guild_member = try guild.members.patch(guild, try .resolve(user.id), guild_member_data);
+
             return .{ .arena = arena, .guild = guild, .guild_member = guild_member };
         },
     }

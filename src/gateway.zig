@@ -72,6 +72,14 @@ pub const Intent = packed struct(IntentInt) {
         .guild_message_polls = true,
         .direct_message_polls = true,
     };
+
+    pub const unprivileged: Intent = blk: {
+        var out = all;
+        out.guild_members = false;
+        out.guild_presences = false;
+        out.message_content = false;
+        break :blk out;
+    };
 };
 
 pub const MessageRead = union(enum) {
