@@ -457,6 +457,14 @@ pub fn createDM(self: *Client, user_id: Snowflake) !*Channel {
     return try self.global_cache.channels.patch(self, try .resolve(channel_response.id), channel_response);
 }
 
+pub fn deleteChannel(self: *Client, channel_id: Snowflake) !void {
+    var req = try self.rest_client.create(.DELETE, endpoints.delete_channel, .{
+        .channel_id = channel_id,
+    });
+    defer req.deinit();
+    try req.fetch();
+}
+
 pub const ReactionAdd = union(enum) {
     unicode: []const u8,
     custom: struct {

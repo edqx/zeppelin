@@ -17,57 +17,15 @@ const Handler = struct {
     }
 
     pub fn messageCreate(self: *Handler, message_create_event: zeppelin.Event.MessageCreate) !void {
-        const allocator = message_create_event.arena;
+        // const allocator = message_create_event.arena;
         const message = message_create_event.message;
 
         if (self.own_user.id == message.author.id) return;
 
         if (!message.meta.queried(.member)) return;
 
-        if (std.mem.eql(u8, message.content, "!delete-me")) {
-            try message.delete();
-            return;
-        }
-
-        try message.createReaction(.{ .custom = .{ .name = "applecat", .id = try .resolve("854479777130217492") } });
-
-        if (std.mem.eql(u8, message.content, "!cat")) {
-            const dm_channel = try message.author.createDM();
-
-            var message_writer = try dm_channel.inner.dm.messageWriter();
-            defer message_writer.deinit();
-
-            try message_writer.write(try .simple(allocator, "here's a cat {}", .{message.author.mention()}));
-
-            try message_writer.beginAttachment("image/png", "cat.png");
-
-            {
-                var http_client: std.http.Client = .{ .allocator = allocator };
-                defer http_client.deinit();
-
-                var buf: [8192]u8 = undefined;
-
-                var req = try http_client.open(
-                    .GET,
-                    try .parse("https://cataas.com/cat"),
-                    .{ .server_header_buffer = &buf },
-                );
-                defer req.deinit();
-
-                try req.send();
-                try req.finish();
-                try req.wait();
-
-                var fifo: std.fifo.LinearFifo(u8, .{ .Static = 4096 }) = .init();
-                defer fifo.deinit();
-
-                try fifo.pump(req.reader(), message_writer.writer());
-            }
-
-            try message_writer.end();
-
-            const created_message = try message_writer.create();
-            std.log.info("message created with id {}", .{created_message.id});
+        if (std.mem.eql(u8, message.content, "delete channel")) {
+            try message.channel.delete();
         }
     }
 

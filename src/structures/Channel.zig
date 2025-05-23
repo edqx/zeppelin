@@ -260,3 +260,7 @@ pub fn patch(self: *Channel, data: Data) !void {
 pub fn mention(self: *Channel) Mention {
     return .{ .channel = self.id };
 }
+
+pub fn delete(self: *Channel) !void {
+    try self.context.deleteChannel(self.id);
+}
