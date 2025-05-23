@@ -26,6 +26,7 @@ const Client = @This();
 pub const DispatchType = enum {
     ready,
     guild_create,
+    guild_member_add,
     message_create,
     message_delete,
 };
@@ -41,6 +42,12 @@ pub const Event = union(DispatchType) {
         guild: *Guild,
     };
 
+    pub const GuildMemberAdd = struct {
+        arena: std.mem.Allocator,
+        guild: *Guild,
+        guild_member: *Guild.Member,
+    };
+
     pub const MessageCreate = struct {
         arena: std.mem.Allocator,
         message: *Message,
@@ -53,6 +60,7 @@ pub const Event = union(DispatchType) {
 
     ready: Ready,
     guild_create: GuildCreate,
+    guild_member_add: GuildMemberAdd,
     message_create: MessageCreate,
     message_delete: MessageDelete,
 };
@@ -60,6 +68,7 @@ pub const Event = union(DispatchType) {
 pub const dispatch_event_map: std.StaticStringMap(DispatchType) = .initComptime(.{
     .{ "READY", .ready },
     .{ "GUILD_CREATE", .guild_create },
+    .{ "GUILD_MEMBER_ADD", .guild_member_add },
     .{ "MESSAGE_CREATE", .message_create },
     .{ "MESSAGE_DELETE", .message_delete },
 });
@@ -212,6 +221,36 @@ fn processGuildCreate(self: *Client, arena: std.mem.Allocator, json: std.json.Va
     return .{ .arena = arena, .guild = guild };
 }
 
+fn processGuildMemberAdd(self: *Client, arena: std.mem.Allocator, json: std.json.Value) !Event.GuildMemberAdd {
+    const users_cache = &self.global_cache.users;
+    const guilds_cache = &self.global_cache.guilds;
+
+    const guild_member_add_data = try std.json.parseFromValueLeaky(
+        gateway_message.payload.GuildMemberAdd,
+        arena,
+        json,
+        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
+    );
+
+    const guild_id = guild_member_add_data.extra.guild_id;
+    const guild_member_data = guild_member_add_data.inner_guild_member;
+
+    switch (guild_member_data.user) {
+        .not_given => {
+            return error.NoGuildUser;
+        }, // what can we do with a guild member with no user?
+        .val => |user_data| {
+            const user = try users_cache.patch(self, try .resolve(user_data.id), user_data);
+
+            const guild = try guilds_cache.touch(self, try .resolve(guild_id));
+
+            const guild_member = try guild.members.patch(guild, try .resolve(user.id), guild_member_data);
+            return .{ .arena = arena, .guild = guild, .guild_member = guild_member };
+        },
+    }
+    unreachable;
+}
+
 fn processMessageCreate(self: *Client, arena: std.mem.Allocator, json: std.json.Value) !Event.MessageCreate {
     const message_data = try std.json.parseFromValueLeaky(
         gateway_message.payload.MessageCreate,
@@ -277,6 +316,7 @@ pub fn receive(self: *Client, arena: *std.heap.ArenaAllocator) !Event {
                 switch (dispatch_event_type) {
                     .ready => return .{ .ready = try self.processReadyEvent(allocator, dispatch_event.data_json) },
                     .guild_create => return .{ .guild_create = try self.processGuildCreate(allocator, dispatch_event.data_json) },
+                    .guild_member_add => return .{ .guild_member_add = try self.processGuildMemberAdd(allocator, dispatch_event.data_json) },
                     .message_create => return .{ .message_create = try self.processMessageCreate(allocator, dispatch_event.data_json) },
                     .message_delete => return .{ .message_delete = try self.processMessageDelete(allocator, dispatch_event.data_json) },
                 }
@@ -334,6 +374,7 @@ pub fn receiveAndDispatch(self: *Client, handler: anytype) !void {
     switch (event) {
         .ready => |ev| if (@hasDecl(@TypeOf(handler.*), "ready")) try handler.ready(ev),
         .guild_create => |ev| if (@hasDecl(@TypeOf(handler.*), "guildCreate")) try handler.guildCreate(ev),
+        .guild_member_add => |ev| if (@hasDecl(@TypeOf(handler.*), "guildMemberAdd")) try handler.guildMemberAdd(ev),
         .message_create => |ev| if (@hasDecl(@TypeOf(handler.*), "messageCreate")) try handler.messageCreate(ev),
         .message_delete => |ev| if (@hasDecl(@TypeOf(handler.*), "messageDelete")) try handler.messageDelete(ev),
     }

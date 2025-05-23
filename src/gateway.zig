@@ -51,14 +51,14 @@ pub const Intent = packed struct(IntentInt) {
 
     pub const all: Intent = .{
         .guilds = true,
-        .guild_members = false,
+        .guild_members = true,
         .guild_moderation = true,
         .guild_expressions = true,
         .guild_integrations = true,
         .guild_webhooks = true,
         .guild_invites = true,
         .guild_voice_states = true,
-        .guild_presences = false,
+        .guild_presences = true,
         .guild_messages = true,
         .guild_message_reactions = true,
         .guild_message_typing = true,

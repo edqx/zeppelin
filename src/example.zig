@@ -29,6 +29,13 @@ const Handler = struct {
         }
     }
 
+    pub fn guildMemberAdd(self: *Handler, guild_member_add_event: zeppelin.Event.GuildMemberAdd) !void {
+        _ = self;
+        const guild_member = guild_member_add_event.guild_member;
+
+        std.log.info("Member {s} joined!", .{guild_member.nick orelse guild_member.user.username});
+    }
+
     pub fn messageDelete(self: *Handler, message_delete_event: zeppelin.Event.MessageDelete) !void {
         _ = self;
 

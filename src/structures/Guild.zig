@@ -54,9 +54,9 @@ pub const Member = struct {
     roles: Pool(Role) = undefined,
 
     pub fn init(self: *Member) void {
+        self.guild = self.context;
         const allocator = self.guild.context.allocator;
 
-        self.guild = self.context;
         self.roles = .{ .allocator = allocator };
     }
 
@@ -182,8 +182,7 @@ fn patchAvailable(self: *Guild, inner_data: @FieldType(Data, "available")) !void
             switch (member_data.user) {
                 .not_given => {}, // there's not really much we can do without a user id
                 .val => |data_user| {
-                    const member = try self.members.touch(self, try .resolve(data_user.id));
-                    try member.patch(member_data);
+                    _ = try self.members.patch(self, try .resolve(data_user.id), member_data);
                 },
             }
         }

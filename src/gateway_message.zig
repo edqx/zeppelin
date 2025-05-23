@@ -525,6 +525,25 @@ pub const payload = struct {
         }
     };
 
+    pub const GuildMemberAdd = struct {
+        pub const Extra = struct {
+            guild_id: Snowflake,
+        };
+
+        inner_guild_member: Guild.Member,
+        extra: Extra,
+
+        pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !GuildMemberAdd {
+            const inner_guild_member = try std.json.innerParseFromValue(Guild.Member, allocator, source, options);
+            const extra = try std.json.innerParseFromValue(Extra, allocator, source, options);
+
+            return .{
+                .inner_guild_member = inner_guild_member,
+                .extra = extra,
+            };
+        }
+    };
+
     pub const MessageCreate = struct {
         pub const Extra = struct {
             guild_id: Elective(Snowflake) = .not_given,
@@ -537,7 +556,7 @@ pub const payload = struct {
 
         pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !MessageCreate {
             const inner_message = try std.json.innerParseFromValue(Message, allocator, source, options);
-            const extra = try std.json.innerParseFromValue(@FieldType(MessageCreate, "extra"), allocator, source, options);
+            const extra = try std.json.innerParseFromValue(Extra, allocator, source, options);
 
             return .{
                 .inner_message = inner_message,
