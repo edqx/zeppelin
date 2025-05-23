@@ -2,6 +2,44 @@ const std = @import("std");
 
 const Snowflake = @import("snowflake.zig").Snowflake;
 
+pub fn Pool(comptime Structure: type) type {
+    return struct {
+        const PoolT = @This();
+
+        allocator: std.mem.Allocator,
+        inner_map: std.AutoArrayHashMapUnmanaged(Snowflake, *Structure) = .empty,
+
+        pub fn deinit(self: *PoolT) void {
+            self.inner_map.deinit(self.allocator);
+        }
+
+        pub fn clear(self: *PoolT) void {
+            self.inner_map.clearRetainingCapacity();
+        }
+
+        pub fn slice(self: *PoolT) []*Structure {
+            return self.inner_map.values();
+        }
+
+        pub fn add(self: *PoolT, structure: *Structure) !void {
+            try self.inner_map.put(self.allocator, structure.id, structure);
+        }
+
+        pub fn remove(self: *PoolT, id: Snowflake) void {
+            _ = self.inner_map.remove(id);
+        }
+
+        pub fn get(self: *PoolT, id: Snowflake) ?*Structure {
+            return self.inner_map.get(id);
+        }
+
+        pub fn resolve(self: *PoolT, ref: anytype) !?*Structure {
+            if (@TypeOf(ref) == *Structure or @TypeOf(ref) == *const Structure) return try self.resolve(ref.id);
+            return self.get(try Snowflake.resolve(ref));
+        }
+    };
+}
+
 pub fn Cache(comptime Structure: type, comptime Context: type) type {
     return struct {
         const CacheT = @This();
@@ -32,7 +70,7 @@ pub fn Cache(comptime Structure: type, comptime Context: type) type {
             return self.inner_map.get(id);
         }
 
-        pub fn resolve(self: *CacheT, ref: anytype) ?*Structure {
+        pub fn resolve(self: *CacheT, ref: anytype) !?*Structure {
             if (@TypeOf(ref) == *Structure or @TypeOf(ref) == *const Structure) return ref;
             return self.get(try Snowflake.resolve(ref));
         }

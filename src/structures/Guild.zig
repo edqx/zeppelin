@@ -7,6 +7,7 @@ const Client = @import("../Client.zig");
 const Permissions = @import("../permissions.zig").Permissions;
 
 const Cache = @import("../cache.zig").Cache;
+const Pool = @import("../cache.zig").Pool;
 
 const Channel = @import("Channel.zig");
 const Role = @import("Role.zig");
@@ -50,26 +51,32 @@ pub const Member = struct {
 
     user: *User = undefined,
     nick: ?[]const u8 = null,
-    roles: []*Role = &.{},
+    roles: Pool(Role) = undefined,
 
     pub fn init(self: *Member) void {
+        const allocator = self.guild.context.allocator;
+
         self.guild = self.context;
+        self.roles = .{ .allocator = allocator };
     }
 
     pub fn deinit(self: *Member) void {
         const allocator = self.guild.context.allocator;
 
-        allocator.free(self.roles);
+        self.roles.deinit();
         if (self.nick) |nick| allocator.free(nick);
     }
 
     pub fn patch(self: *Member, data: Member.Data) !void {
         const allocator = self.guild.context.allocator;
 
+        const users_cache = &self.guild.context.global_cache.users;
+        const roles_cache = &self.guild.context.global_cache.roles;
+
         switch (data.user) {
             .not_given => {},
             .val => |data_user| {
-                const user = try self.guild.context.global_cache.users.patch(self.guild.context, try .resolve(data_user.id), data_user);
+                const user = try users_cache.patch(self.guild.context, try .resolve(data_user.id), data_user);
                 self.meta.patch(.user, user);
             },
         }
@@ -82,21 +89,16 @@ pub const Member = struct {
             },
         }
 
-        var role_references: std.ArrayListUnmanaged(*Role) = try .initCapacity(allocator, 1 + data.roles.len);
-        defer role_references.deinit(allocator);
+        self.roles.clear();
 
-        const everyone_role = try self.guild.context.global_cache.roles.touch(self.guild.context, self.guild.id);
-        everyone_role.meta.patch(.guild, self.guild);
-        role_references.appendAssumeCapacity(everyone_role);
+        const everyone_role = try self.guild.everyoneRole();
+        try self.roles.add(everyone_role);
 
         for (data.roles) |role_id| {
-            const role = try self.guild.context.global_cache.roles.touch(self.guild.context, try .resolve(role_id));
+            const role = try roles_cache.touch(self.guild.context, try .resolve(role_id));
             role.meta.patch(.guild, self.guild);
-            role_references.appendAssumeCapacity(role);
+            try self.roles.add(role);
         }
-
-        allocator.free(self.roles);
-        self.meta.patch(.roles, try role_references.toOwnedSlice(allocator));
     }
 
     pub fn owner(self: *Member) bool {
@@ -130,14 +132,16 @@ available: bool = false,
 
 name: []const u8 = "",
 owner_id: Snowflake = undefined,
-channels: []*Channel = &.{},
-roles: []*Role = &.{},
+channels: Pool(Channel) = undefined,
+roles: Pool(Role) = undefined,
 
 members: Cache(Member, *Guild) = undefined,
 
 pub fn init(self: *Guild) void {
     const allocator = self.context.allocator;
     self.members = .init(allocator);
+    self.channels = .{ .allocator = allocator };
+    self.roles = .{ .allocator = allocator };
 }
 
 pub fn deinit(self: *Guild) void {
@@ -145,33 +149,32 @@ pub fn deinit(self: *Guild) void {
 
     self.members.deinit();
 
-    allocator.free(self.roles);
-    allocator.free(self.channels);
+    self.roles.deinit();
+    self.channels.deinit();
     allocator.free(self.name);
 }
 
 fn patchAvailable(self: *Guild, inner_data: @FieldType(Data, "available")) !void {
     const allocator = self.context.allocator;
 
+    const channels_cache = &self.context.global_cache.channels;
+    const roles_cache = &self.context.global_cache.roles;
+
     allocator.free(self.name);
     self.meta.patch(.name, try allocator.dupe(u8, inner_data.base.name));
 
     self.meta.patch(.owner_id, try .resolve(inner_data.base.owner_id));
 
-    if (inner_data.channels) |channnels_data| {
-        var channel_references: std.ArrayListUnmanaged(*Channel) = try .initCapacity(allocator, channnels_data.len);
-        defer channel_references.deinit(allocator);
+    if (inner_data.channels) |channels_data| {
+        self.channels.clear();
 
-        for (channnels_data) |channel_data| {
+        for (channels_data) |channel_data| {
             var modified_data = channel_data;
-            modified_data.guild_id = .{ .val = inner_data.base.id }; // guild.channels don't have the guild id with them
+            modified_data.guild_id = .{ .val = inner_data.base.id }; // work-around, because guild.channels don't have the guild id with them
 
-            const channel = try self.context.global_cache.channels.patch(self.context, try .resolve(modified_data.id), modified_data);
-            channel_references.appendAssumeCapacity(channel);
+            const channel = try channels_cache.patch(self.context, try .resolve(modified_data.id), modified_data);
+            try self.channels.add(channel);
         }
-
-        allocator.free(self.channels);
-        self.meta.patch(.channels, try channel_references.toOwnedSlice(allocator));
     }
 
     if (inner_data.members) |members_data| {
@@ -186,17 +189,16 @@ fn patchAvailable(self: *Guild, inner_data: @FieldType(Data, "available")) !void
         }
     }
 
-    var role_references: std.ArrayListUnmanaged(*Role) = try .initCapacity(allocator, inner_data.base.roles.len);
-    defer role_references.deinit(allocator);
+    self.roles.clear();
+
+    const everyone_role = try self.everyoneRole();
+    try self.roles.add(everyone_role);
 
     for (inner_data.base.roles) |role_data| {
-        const role = try self.context.global_cache.roles.patch(self.context, try .resolve(role_data.id), role_data);
-        role_references.appendAssumeCapacity(role);
+        const role = try roles_cache.patch(self.context, try .resolve(role_data.id), role_data);
         role.meta.patch(.guild, self);
+        try self.roles.add(role);
     }
-
-    allocator.free(self.roles);
-    self.meta.patch(.roles, try role_references.toOwnedSlice(allocator));
 }
 
 pub fn patch(self: *Guild, data: Data) !void {
@@ -209,4 +211,12 @@ pub fn patch(self: *Guild, data: Data) !void {
             self.available = false;
         },
     }
+}
+
+pub fn everyoneRole(self: *Guild) !*Role {
+    const roles_cache = &self.context.global_cache.roles;
+
+    const everyone_role = try roles_cache.touch(self.context, self.id);
+    everyone_role.meta.patch(.guild, self);
+    return everyone_role;
 }
