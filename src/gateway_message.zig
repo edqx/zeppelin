@@ -544,6 +544,11 @@ pub const payload = struct {
         }
     };
 
+    pub const GuildMemberRemove = struct {
+        guild_id: Snowflake,
+        user: User,
+    };
+
     pub const MessageCreate = struct {
         pub const Extra = struct {
             guild_id: Elective(Snowflake) = .not_given,

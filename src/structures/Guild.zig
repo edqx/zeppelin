@@ -135,11 +135,13 @@ owner_id: Snowflake = undefined,
 channels: Pool(Channel) = undefined,
 roles: Pool(Role) = undefined,
 
-members: Cache(Member, *Guild) = undefined,
+members_cache: Cache(Member, *Guild) = undefined,
+members: Pool(Member) = undefined,
 
 pub fn init(self: *Guild) void {
     const allocator = self.context.allocator;
-    self.members = .init(allocator);
+    self.members_cache = .init(allocator);
+    self.members = .{ .allocator = allocator };
     self.channels = .{ .allocator = allocator };
     self.roles = .{ .allocator = allocator };
 }
@@ -148,6 +150,7 @@ pub fn deinit(self: *Guild) void {
     const allocator = self.context.allocator;
 
     self.members.deinit();
+    self.members_cache.deinit();
 
     self.roles.deinit();
     self.channels.deinit();
@@ -182,7 +185,8 @@ fn patchAvailable(self: *Guild, inner_data: @FieldType(Data, "available")) !void
             switch (member_data.user) {
                 .not_given => {}, // there's not really much we can do without a user id
                 .val => |data_user| {
-                    _ = try self.members.patch(self, try .resolve(data_user.id), member_data);
+                    const guild_member = try self.members_cache.patch(self, try .resolve(data_user.id), member_data);
+                    try self.members.add(guild_member);
                 },
             }
         }

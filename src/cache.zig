@@ -26,7 +26,7 @@ pub fn Pool(comptime Structure: type) type {
         }
 
         pub fn remove(self: *PoolT, id: Snowflake) void {
-            _ = self.inner_map.remove(id);
+            _ = self.inner_map.orderedRemove(id);
         }
 
         pub fn get(self: *PoolT, id: Snowflake) ?*Structure {

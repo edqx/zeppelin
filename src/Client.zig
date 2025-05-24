@@ -27,6 +27,7 @@ pub const DispatchType = enum {
     ready,
     guild_create,
     guild_member_add,
+    guild_member_remove,
     message_create,
     message_delete,
 };
@@ -48,6 +49,12 @@ pub const Event = union(DispatchType) {
         guild_member: *Guild.Member,
     };
 
+    pub const GuildMemberRemove = struct {
+        arena: std.mem.Allocator,
+        guild: *Guild,
+        guild_member: *Guild.Member,
+    };
+
     pub const MessageCreate = struct {
         arena: std.mem.Allocator,
         message: *Message,
@@ -61,6 +68,7 @@ pub const Event = union(DispatchType) {
     ready: Ready,
     guild_create: GuildCreate,
     guild_member_add: GuildMemberAdd,
+    guild_member_remove: GuildMemberRemove,
     message_create: MessageCreate,
     message_delete: MessageDelete,
 };
@@ -69,6 +77,7 @@ pub const dispatch_event_map: std.StaticStringMap(DispatchType) = .initComptime(
     .{ "READY", .ready },
     .{ "GUILD_CREATE", .guild_create },
     .{ "GUILD_MEMBER_ADD", .guild_member_add },
+    .{ "GUILD_MEMBER_REMOVE", .guild_member_remove },
     .{ "MESSAGE_CREATE", .message_create },
     .{ "MESSAGE_DELETE", .message_delete },
 });
@@ -242,12 +251,36 @@ fn processGuildMemberAdd(self: *Client, arena: std.mem.Allocator, json: std.json
         .val => |user_data| {
             const user = try users_cache.patch(self, try .resolve(user_data.id), user_data);
             const guild = try guilds_cache.touch(self, try .resolve(guild_id));
-            const guild_member = try guild.members.patch(guild, try .resolve(user.id), guild_member_data);
+            const guild_member = try guild.members_cache.patch(guild, try .resolve(user.id), guild_member_data);
+            try guild.members.add(guild_member);
 
             return .{ .arena = arena, .guild = guild, .guild_member = guild_member };
         },
     }
     unreachable;
+}
+
+fn processGuildMemberRemove(self: *Client, arena: std.mem.Allocator, json: std.json.Value) !Event.GuildMemberRemove {
+    const users_cache = &self.global_cache.users;
+    const guilds_cache = &self.global_cache.guilds;
+
+    const guild_member_remove_data = try std.json.parseFromValueLeaky(
+        gateway_message.payload.GuildMemberRemove,
+        arena,
+        json,
+        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
+    );
+
+    const user_data = guild_member_remove_data.user;
+
+    const guild = try guilds_cache.touch(self, try .resolve(guild_member_remove_data.guild_id));
+    guild.members.remove(try .resolve(user_data.id));
+
+    const user = try users_cache.patch(self, try .resolve(user_data.id), user_data);
+    const guild_member = try guild.members_cache.touch(guild, try .resolve(user_data.id));
+    guild_member.meta.patch(.user, user);
+
+    return .{ .arena = arena, .guild = guild, .guild_member = guild_member };
 }
 
 fn processMessageCreate(self: *Client, arena: std.mem.Allocator, json: std.json.Value) !Event.MessageCreate {
@@ -316,6 +349,7 @@ pub fn receive(self: *Client, arena: *std.heap.ArenaAllocator) !Event {
                     .ready => return .{ .ready = try self.processReadyEvent(allocator, dispatch_event.data_json) },
                     .guild_create => return .{ .guild_create = try self.processGuildCreate(allocator, dispatch_event.data_json) },
                     .guild_member_add => return .{ .guild_member_add = try self.processGuildMemberAdd(allocator, dispatch_event.data_json) },
+                    .guild_member_remove => return .{ .guild_member_remove = try self.processGuildMemberRemove(allocator, dispatch_event.data_json) },
                     .message_create => return .{ .message_create = try self.processMessageCreate(allocator, dispatch_event.data_json) },
                     .message_delete => return .{ .message_delete = try self.processMessageDelete(allocator, dispatch_event.data_json) },
                 }
@@ -374,6 +408,7 @@ pub fn receiveAndDispatch(self: *Client, handler: anytype) !void {
         .ready => |ev| if (@hasDecl(@TypeOf(handler.*), "ready")) try handler.ready(ev),
         .guild_create => |ev| if (@hasDecl(@TypeOf(handler.*), "guildCreate")) try handler.guildCreate(ev),
         .guild_member_add => |ev| if (@hasDecl(@TypeOf(handler.*), "guildMemberAdd")) try handler.guildMemberAdd(ev),
+        .guild_member_remove => |ev| if (@hasDecl(@TypeOf(handler.*), "guildMemberRemove")) try handler.guildMemberRemove(ev),
         .message_create => |ev| if (@hasDecl(@TypeOf(handler.*), "messageCreate")) try handler.messageCreate(ev),
         .message_delete => |ev| if (@hasDecl(@TypeOf(handler.*), "messageDelete")) try handler.messageDelete(ev),
     }

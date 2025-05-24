@@ -109,7 +109,8 @@ pub fn patch(self: *Message, data: Data) !void {
         self.meta.patch(.guild, guild);
 
         if (data.member) |data_member| {
-            const member = try guild.members.patch(guild, try .resolve(data.base.author.id), data_member);
+            const member = try guild.members_cache.patch(guild, try .resolve(data.base.author.id), data_member);
+            try guild.members.add(member);
             self.meta.patch(.member, member);
         }
     }
