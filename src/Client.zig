@@ -75,6 +75,86 @@ pub const Event = union(DispatchType) {
     message_delete: MessageDelete,
 };
 
+pub const ChannelManager = struct {
+    client: *Client,
+
+    cache: Cache(Channel),
+    pool: Pool(Channel),
+
+    pub fn init(client: *Client) ChannelManager {
+        return .{ .client = client, .cache = .init(client.allocator), .pool = .init(client.allocator) };
+    }
+
+    pub fn deinit(self: *ChannelManager) void {
+        self.pool.deinit();
+        self.cache.deinit();
+    }
+};
+
+pub const GuildManager = struct {
+    client: *Client,
+
+    cache: Cache(Guild),
+    pool: Pool(Guild),
+
+    pub fn init(client: *Client) GuildManager {
+        return .{ .client = client, .cache = .init(client.allocator), .pool = .init(client.allocator) };
+    }
+
+    pub fn deinit(self: *GuildManager) void {
+        self.pool.deinit();
+        self.cache.deinit();
+    }
+};
+
+pub const MessageManager = struct {
+    client: *Client,
+
+    cache: Cache(Message),
+    pool: Pool(Message),
+
+    pub fn init(client: *Client) MessageManager {
+        return .{ .client = client, .cache = .init(client.allocator), .pool = .init(client.allocator) };
+    }
+
+    pub fn deinit(self: *MessageManager) void {
+        self.pool.deinit();
+        self.cache.deinit();
+    }
+};
+
+pub const RoleManager = struct {
+    client: *Client,
+
+    cache: Cache(Role),
+    pool: Pool(Role),
+
+    pub fn init(client: *Client) RoleManager {
+        return .{ .client = client, .cache = .init(client.allocator), .pool = .init(client.allocator) };
+    }
+
+    pub fn deinit(self: *RoleManager) void {
+        self.pool.deinit();
+        self.cache.deinit();
+    }
+};
+
+pub const UserManager = struct {
+    client: *Client,
+
+    cache: Cache(User),
+    pool: Pool(User),
+
+    pub fn init(client: *Client) UserManager {
+        return .{ .client = client, .cache = .init(client.allocator), .pool = .init(client.allocator) };
+    }
+
+    pub fn deinit(self: *UserManager) void {
+        self.pool.deinit();
+        self.cache.deinit();
+    }
+};
+
 pub const dispatch_event_map: std.StaticStringMap(DispatchType) = .initComptime(.{
     .{ "READY", .ready },
     .{ "GUILD_CREATE", .guild_create },
@@ -83,14 +163,6 @@ pub const dispatch_event_map: std.StaticStringMap(DispatchType) = .initComptime(
     .{ "MESSAGE_CREATE", .message_create },
     .{ "MESSAGE_DELETE", .message_delete },
 });
-
-pub const GlobalCache = struct {
-    channels: Cache(Channel, *Client),
-    guilds: Cache(Guild, *Client),
-    messages: Cache(Message, *Client),
-    roles: Cache(Role, *Client),
-    users: Cache(User, *Client),
-};
 
 pub const InitOptions = struct {
     allocator: std.mem.Allocator,
@@ -103,30 +175,38 @@ maybe_reconnect_options: ?gateway.Options,
 
 rest_client: Rest,
 
-global_cache: GlobalCache,
+channels: ChannelManager,
+guilds: GuildManager,
+messages: MessageManager,
+roles: RoleManager,
+users: UserManager,
 
-pub fn init(options: InitOptions) !Client {
-    return .{
+pub fn init(self: *Client, options: InitOptions) !void {
+    self.* = .{
         .allocator = options.allocator,
         .maybe_gateway_client = null,
         .maybe_reconnect_options = null,
         .rest_client = .init(options.allocator, options.authentication),
-        .global_cache = .{
-            .channels = .init(options.allocator),
-            .guilds = .init(options.allocator),
-            .messages = .init(options.allocator),
-            .roles = .init(options.allocator),
-            .users = .init(options.allocator),
-        },
+        .channels = undefined,
+        .guilds = undefined,
+        .messages = undefined,
+        .roles = undefined,
+        .users = undefined,
     };
+
+    self.channels = .init(self);
+    self.guilds = .init(self);
+    self.messages = .init(self);
+    self.roles = .init(self);
+    self.users = .init(self);
 }
 
 pub fn deinit(self: *Client) void {
-    self.global_cache.users.deinit();
-    self.global_cache.roles.deinit();
-    self.global_cache.messages.deinit();
-    self.global_cache.guilds.deinit();
-    self.global_cache.channels.deinit();
+    self.users.deinit();
+    self.roles.deinit();
+    self.messages.deinit();
+    self.guilds.deinit();
+    self.channels.deinit();
     self.rest_client.deinit();
     self.clearReconnect();
     if (self.maybe_gateway_client) |*gateway_client| {
@@ -186,7 +266,7 @@ fn processReadyEvent(self: *Client, arena: std.mem.Allocator, json: std.json.Val
         .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
     );
 
-    const user = try self.global_cache.users.patch(
+    const user = try self.users.cache.patch(
         self,
         try .resolve(ready_data.user.id),
         ready_data.user,
@@ -213,7 +293,7 @@ fn processGuildCreate(self: *Client, arena: std.mem.Allocator, json: std.json.Va
     );
 
     const guild = switch (guild_data) {
-        .available => |available_data| try self.global_cache.guilds.patch(
+        .available => |available_data| try self.guilds.cache.patch(
             self,
             try .resolve(available_data.inner_guild.id),
             .{ .available = .{
@@ -222,7 +302,7 @@ fn processGuildCreate(self: *Client, arena: std.mem.Allocator, json: std.json.Va
                 .members = available_data.extra.members,
             } },
         ),
-        .unavailable => |unavailable_data| try self.global_cache.guilds.patch(
+        .unavailable => |unavailable_data| try self.guilds.cache.patch(
             self,
             try .resolve(unavailable_data.id),
             .{ .unavailable = unavailable_data },
@@ -233,8 +313,8 @@ fn processGuildCreate(self: *Client, arena: std.mem.Allocator, json: std.json.Va
 }
 
 fn processGuildMemberAdd(self: *Client, arena: std.mem.Allocator, json: std.json.Value) !Event.GuildMemberAdd {
-    const users_cache = &self.global_cache.users;
-    const guilds_cache = &self.global_cache.guilds;
+    const users_cache = &self.users.cache;
+    const guilds_cache = &self.guilds.cache;
 
     const guild_member_add_data = try std.json.parseFromValueLeaky(
         gateway_message.payload.GuildMemberAdd,
@@ -253,8 +333,8 @@ fn processGuildMemberAdd(self: *Client, arena: std.mem.Allocator, json: std.json
         .val => |user_data| {
             const user = try users_cache.patch(self, try .resolve(user_data.id), user_data);
             const guild = try guilds_cache.touch(self, try .resolve(guild_id));
-            const guild_member = try guild.members_cache.patch(guild, try .resolve(user.id), guild_member_data);
-            try guild.members.add(guild_member);
+            const guild_member = try guild.members.cache.patch(guild, try .resolve(user.id), guild_member_data);
+            try guild.members.pool.add(guild_member);
 
             return .{ .arena = arena, .guild = guild, .guild_member = guild_member };
         },
@@ -263,8 +343,8 @@ fn processGuildMemberAdd(self: *Client, arena: std.mem.Allocator, json: std.json
 }
 
 fn processGuildMemberRemove(self: *Client, arena: std.mem.Allocator, json: std.json.Value) !Event.GuildMemberRemove {
-    const users_cache = &self.global_cache.users;
-    const guilds_cache = &self.global_cache.guilds;
+    const users_cache = &self.users.cache;
+    const guilds_cache = &self.guilds.cache;
 
     const guild_member_remove_data = try std.json.parseFromValueLeaky(
         gateway_message.payload.GuildMemberRemove,
@@ -276,10 +356,10 @@ fn processGuildMemberRemove(self: *Client, arena: std.mem.Allocator, json: std.j
     const user_data = guild_member_remove_data.user;
 
     const guild = try guilds_cache.touch(self, try .resolve(guild_member_remove_data.guild_id));
-    guild.members.remove(try .resolve(user_data.id));
 
     const user = try users_cache.patch(self, try .resolve(user_data.id), user_data);
-    const guild_member = try guild.members_cache.touch(guild, try .resolve(user_data.id));
+    const guild_member = try guild.members.cache.touch(guild, try .resolve(user_data.id));
+    guild.members.pool.remove(try .resolve(user_data.id));
     guild_member.meta.patch(.user, user);
 
     return .{ .arena = arena, .guild = guild, .guild_member = guild_member };
@@ -293,7 +373,7 @@ fn processMessageCreate(self: *Client, arena: std.mem.Allocator, json: std.json.
         .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
     );
 
-    const message = try self.global_cache.messages.patch(
+    const message = try self.messages.cache.patch(
         self,
         try .resolve(message_data.inner_message.id),
         .{
@@ -321,14 +401,13 @@ fn processMessageDelete(self: *Client, arena: std.mem.Allocator, json: std.json.
         .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
     );
 
-    const message = try self.global_cache.messages.touch(self, try .resolve(delete_data.id));
-
-    const channel = try self.global_cache.channels.touch(self, try .resolve(delete_data.channel_id));
+    const message = try self.messages.cache.touch(self, try .resolve(delete_data.id));
+    const channel = try self.channels.cache.touch(self, try .resolve(delete_data.channel_id));
 
     message.meta.patch(.channel, channel);
     switch (delete_data.guild_id) {
         .not_given => {},
-        .val => |guild_id| message.meta.patch(.guild, try self.global_cache.guilds.touch(self, try .resolve(guild_id))),
+        .val => |guild_id| message.meta.patch(.guild, try self.guilds.cache.touch(self, try .resolve(guild_id))),
     }
 
     return .{ .arena = arena, .message = message };
@@ -476,7 +555,7 @@ pub const MessageWriter = struct {
     pub fn create(self: *MessageWriter) !*Message {
         try self.form_writer.endEntries();
         const message_response = try self.req.fetchJson(gateway_message.Message);
-        return try self.client.global_cache.messages.patch(self.client, try .resolve(message_response.id), .{
+        return try self.client.messages.cache.patch(self.client, try .resolve(message_response.id), .{
             .base = message_response,
             .guild_id = null,
             .member = null,
@@ -530,7 +609,7 @@ pub fn createDM(self: *Client, user_id: Snowflake) !*Channel {
     try jw.endObject();
 
     const channel_response = try req.fetchJson(gateway_message.Channel);
-    return try self.global_cache.channels.patch(self, try .resolve(channel_response.id), channel_response);
+    return try self.channels.cache.patch(self, try .resolve(channel_response.id), channel_response);
 }
 
 pub fn deleteChannel(self: *Client, channel_id: Snowflake) !void {

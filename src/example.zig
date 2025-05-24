@@ -65,7 +65,8 @@ pub fn main() !void {
     defer env_map.deinit();
 
     const token = env_map.get("ZEPPELIN_TOKEN") orelse @panic("Missing environment variable ZEPPELIN_TOKEN");
-    var client: zeppelin.Client = try .init(.{
+    var client: zeppelin.Client = undefined;
+    try client.init(.{
         .allocator = allocator,
         .authentication = .{ .token = token },
     });

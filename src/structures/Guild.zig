@@ -57,7 +57,7 @@ pub const Member = struct {
         self.guild = self.context;
         const allocator = self.guild.context.allocator;
 
-        self.roles = .{ .allocator = allocator };
+        self.roles = .init(allocator);
     }
 
     pub fn deinit(self: *Member) void {
@@ -70,8 +70,8 @@ pub const Member = struct {
     pub fn patch(self: *Member, data: Member.Data) !void {
         const allocator = self.guild.context.allocator;
 
-        const users_cache = &self.guild.context.global_cache.users;
-        const roles_cache = &self.guild.context.global_cache.roles;
+        const users_cache = &self.guild.context.users.cache;
+        const roles_cache = &self.guild.context.roles.cache;
 
         switch (data.user) {
             .not_given => {},
@@ -118,6 +118,22 @@ pub const Member = struct {
     }
 };
 
+pub const MemberManager = struct {
+    guild: *Guild,
+
+    cache: Cache(Member),
+    pool: Pool(Member),
+
+    pub fn init(guild: *Guild) MemberManager {
+        return .{ .guild = guild, .cache = .init(guild.context.allocator), .pool = .init(guild.context.allocator) };
+    }
+
+    pub fn deinit(self: *MemberManager) void {
+        self.pool.deinit();
+        self.cache.deinit();
+    }
+};
+
 const Guild = @This();
 
 meta: QueriedFields(Guild, &.{
@@ -135,22 +151,19 @@ owner_id: Snowflake = undefined,
 channels: Pool(Channel) = undefined,
 roles: Pool(Role) = undefined,
 
-members_cache: Cache(Member, *Guild) = undefined,
-members: Pool(Member) = undefined,
+members: MemberManager = undefined,
 
 pub fn init(self: *Guild) void {
     const allocator = self.context.allocator;
-    self.members_cache = .init(allocator);
-    self.members = .{ .allocator = allocator };
-    self.channels = .{ .allocator = allocator };
-    self.roles = .{ .allocator = allocator };
+    self.channels = .init(allocator);
+    self.roles = .init(allocator);
+    self.members = .init(self);
 }
 
 pub fn deinit(self: *Guild) void {
     const allocator = self.context.allocator;
 
     self.members.deinit();
-    self.members_cache.deinit();
 
     self.roles.deinit();
     self.channels.deinit();
@@ -160,8 +173,8 @@ pub fn deinit(self: *Guild) void {
 fn patchAvailable(self: *Guild, inner_data: @FieldType(Data, "available")) !void {
     const allocator = self.context.allocator;
 
-    const channels_cache = &self.context.global_cache.channels;
-    const roles_cache = &self.context.global_cache.roles;
+    const channels_cache = &self.context.channels.cache;
+    const roles_cache = &self.context.roles.cache;
 
     allocator.free(self.name);
     self.meta.patch(.name, try allocator.dupe(u8, inner_data.base.name));
@@ -185,8 +198,8 @@ fn patchAvailable(self: *Guild, inner_data: @FieldType(Data, "available")) !void
             switch (member_data.user) {
                 .not_given => {}, // there's not really much we can do without a user id
                 .val => |data_user| {
-                    const guild_member = try self.members_cache.patch(self, try .resolve(data_user.id), member_data);
-                    try self.members.add(guild_member);
+                    const guild_member = try self.members.cache.patch(self, try .resolve(data_user.id), member_data);
+                    try self.members.pool.add(guild_member);
                 },
             }
         }
@@ -217,7 +230,7 @@ pub fn patch(self: *Guild, data: Data) !void {
 }
 
 pub fn everyoneRole(self: *Guild) !*Role {
-    const roles_cache = &self.context.global_cache.roles;
+    const roles_cache = &self.context.roles.cache;
 
     const everyone_role = try roles_cache.touch(self.context, self.id);
     everyone_role.meta.patch(.guild, self);

@@ -7,7 +7,14 @@ pub fn Pool(comptime Structure: type) type {
         const PoolT = @This();
 
         allocator: std.mem.Allocator,
-        inner_map: std.AutoArrayHashMapUnmanaged(Snowflake, *Structure) = .empty,
+        inner_map: std.AutoArrayHashMapUnmanaged(Snowflake, *Structure),
+
+        pub fn init(allocator: std.mem.Allocator) PoolT {
+            return .{
+                .allocator = allocator,
+                .inner_map = .empty,
+            };
+        }
 
         pub fn deinit(self: *PoolT) void {
             self.inner_map.deinit(self.allocator);
@@ -40,7 +47,9 @@ pub fn Pool(comptime Structure: type) type {
     };
 }
 
-pub fn Cache(comptime Structure: type, comptime Context: type) type {
+pub fn Cache(comptime Structure: type) type {
+    const Context = @FieldType(Structure, "context");
+
     return struct {
         const CacheT = @This();
 

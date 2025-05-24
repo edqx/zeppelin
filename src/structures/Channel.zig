@@ -107,7 +107,7 @@ pub fn AnyChannel(comptime channel_type: Type, comptime used_fields: []const [:0
                     .not_given => {},
                     .val => |guild_id| self.meta.patch(
                         .guild,
-                        try self.context.global_cache.guilds.touch(self.context, try .resolve(guild_id)),
+                        try self.context.guilds.cache.touch(self.context, try .resolve(guild_id)),
                     ),
                 }
             }
