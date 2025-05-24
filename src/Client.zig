@@ -9,7 +9,9 @@ const endpoints = @import("constants.zig").endpoints;
 const Snowflake = @import("snowflake.zig").Snowflake;
 
 const Authentication = @import("authentication.zig").Authentication;
+
 const Cache = @import("cache.zig").Cache;
+const Pool = @import("cache.zig").Pool;
 
 const MessageBuilder = @import("MessageBuilder.zig");
 
@@ -320,7 +322,6 @@ fn processMessageDelete(self: *Client, arena: std.mem.Allocator, json: std.json.
     );
 
     const message = try self.global_cache.messages.touch(self, try .resolve(delete_data.id));
-    message.deleted = true;
 
     const channel = try self.global_cache.channels.touch(self, try .resolve(delete_data.channel_id));
 
