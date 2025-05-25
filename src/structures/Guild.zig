@@ -173,9 +173,6 @@ pub fn deinit(self: *Guild) void {
 fn patchAvailable(self: *Guild, inner_data: @FieldType(Data, "available")) !void {
     const allocator = self.context.allocator;
 
-    const channels_cache = &self.context.channels.cache;
-    const roles_cache = &self.context.roles.cache;
-
     allocator.free(self.name);
     self.meta.patch(.name, try allocator.dupe(u8, inner_data.base.name));
 
@@ -188,7 +185,8 @@ fn patchAvailable(self: *Guild, inner_data: @FieldType(Data, "available")) !void
             var modified_data = channel_data;
             modified_data.guild_id = .{ .val = inner_data.base.id }; // work-around, because guild.channels don't have the guild id with them
 
-            const channel = try channels_cache.patch(self.context, try .resolve(modified_data.id), modified_data);
+            const channel = try self.context.channels.cache.patch(self.context, try .resolve(modified_data.id), modified_data);
+            try self.context.channels.pool.add(channel);
             try self.channels.add(channel);
         }
     }
@@ -211,8 +209,9 @@ fn patchAvailable(self: *Guild, inner_data: @FieldType(Data, "available")) !void
     try self.roles.add(everyone_role);
 
     for (inner_data.base.roles) |role_data| {
-        const role = try roles_cache.patch(self.context, try .resolve(role_data.id), role_data);
+        const role = try self.context.roles.cache.patch(self.context, try .resolve(role_data.id), role_data);
         role.meta.patch(.guild, self);
+        try self.context.roles.pool.add(role);
         try self.roles.add(role);
     }
 }

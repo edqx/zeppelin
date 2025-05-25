@@ -27,6 +27,23 @@ const Handler = struct {
         if (std.mem.eql(u8, message.content, "delete channel")) {
             try message.channel.delete();
         }
+
+        if (std.mem.eql(u8, message.content, "get fetch")) {
+            const role = try self.client.roles.fetch(try .resolve("746067864481431562"), try .resolve("1079505451898654811"));
+            if (role != null) std.log.info("role name: '{s}'", .{role.?.name});
+
+            const guild = try self.client.guilds.fetch(try .resolve("977680021374259260"));
+            if (guild != null) std.log.info("guild: '{s}'", .{guild.?.name});
+
+            const message2 = try self.client.messages.fetch(try .resolve("746068477906911392"), try .resolve("1376238616077926423"));
+            if (message2 != null) std.log.info("message: '{s}'", .{message2.?.content});
+
+            const channel = try self.client.channels.fetch(try .resolve("1072574660203528253"));
+            if (channel != null) std.log.info("channel: '{s}'", .{channel.?.inner.guild_text.name.?});
+
+            const user = try self.client.users.fetch(try .resolve("1001475015285407825"));
+            if (user != null) std.log.info("user: '{s}'", .{user.?.username});
+        }
     }
 
     pub fn guildMemberAdd(self: *Handler, guild_member_add_event: zeppelin.Event.GuildMemberAdd) !void {

@@ -56,13 +56,19 @@ pub const Request = struct {
 
         try self.http_request.finish();
         try self.http_request.wait();
+    }
 
-        if (self.http_request.response.status.class() != .success) return error.RequestError;
+    pub fn status(self: *Request) std.http.Status {
+        return self.http_request.response.status;
     }
 
     pub fn fetchJson(self: *Request, comptime ResponseData: type) !ResponseData {
         try self.fetch();
+        if (self.status().class() != .success) return error.RequestError;
+        return try self.readJson(ResponseData);
+    }
 
+    pub fn readJson(self: *Request, comptime ResponseData: type) !ResponseData {
         const allocator = self.arena.allocator();
 
         var json_reader = std.json.reader(allocator, self.http_request.reader());

@@ -89,6 +89,26 @@ pub const ChannelManager = struct {
         self.pool.deinit();
         self.cache.deinit();
     }
+
+    pub fn getOrFetch(self: *ChannelManager, id: Snowflake) !?*Channel {
+        return self.get(id) orelse try self.fetch(id);
+    }
+
+    pub fn get(self: *ChannelManager, id: Snowflake) ?*Channel {
+        return self.pool.get(id);
+    }
+
+    pub fn fetch(self: *ChannelManager, id: Snowflake) !?*Channel {
+        var req = try self.client.rest_client.create(.GET, endpoints.get_channel, .{
+            .channel_id = id,
+        });
+        errdefer req.deinit();
+
+        const channel_response = try req.fetchJson(gateway_message.Channel);
+        const channel = try self.cache.patch(self.client, try .resolve(channel_response.id), channel_response);
+        try self.pool.add(channel);
+        return channel;
+    }
 };
 
 pub const GuildManager = struct {
@@ -104,6 +124,32 @@ pub const GuildManager = struct {
     pub fn deinit(self: *GuildManager) void {
         self.pool.deinit();
         self.cache.deinit();
+    }
+
+    pub fn getOrFetch(self: *GuildManager, id: Snowflake) !?*Guild {
+        return self.get(id) orelse try self.fetch(id);
+    }
+
+    pub fn get(self: *GuildManager, id: Snowflake) ?*Guild {
+        return self.pool.get(id);
+    }
+
+    pub fn fetch(self: *GuildManager, id: Snowflake) !?*Guild {
+        var req = try self.client.rest_client.create(.GET, endpoints.get_guild, .{
+            .guild_id = id,
+        });
+        errdefer req.deinit();
+
+        const guild_response = try req.fetchJson(gateway_message.Guild);
+        const guild = try self.cache.patch(self.client, try .resolve(guild_response.id), .{
+            .available = .{
+                .base = guild_response,
+                .channels = null,
+                .members = null,
+            },
+        });
+        try self.pool.add(guild);
+        return guild;
     }
 };
 
@@ -121,6 +167,32 @@ pub const MessageManager = struct {
         self.pool.deinit();
         self.cache.deinit();
     }
+
+    pub fn getOrFetch(self: *MessageManager, id: Snowflake) !?*Message {
+        return self.get(id) orelse try self.fetch(id);
+    }
+
+    pub fn get(self: *MessageManager, id: Snowflake) ?*Message {
+        return self.pool.get(id);
+    }
+
+    pub fn fetch(self: *MessageManager, channel_id: Snowflake, id: Snowflake) !?*Message {
+        var req = try self.client.rest_client.create(.GET, endpoints.get_channel_message, .{
+            .channel_id = channel_id,
+            .message_id = id,
+        });
+        errdefer req.deinit();
+
+        const message_response = try req.fetchJson(gateway_message.Message);
+        const message = try self.cache.patch(self.client, try .resolve(message_response.id), .{
+            .base = message_response,
+            .guild_id = null,
+            .member = null,
+            .mentions = null,
+        });
+        try self.pool.add(message);
+        return message;
+    }
 };
 
 pub const RoleManager = struct {
@@ -137,21 +209,62 @@ pub const RoleManager = struct {
         self.pool.deinit();
         self.cache.deinit();
     }
+
+    pub fn getOrFetch(self: *RoleManager, id: Snowflake) !?*Message {
+        return self.get(id) orelse try self.fetch(id);
+    }
+
+    pub fn get(self: *RoleManager, id: Snowflake) ?*Message {
+        return self.pool.get(id);
+    }
+
+    pub fn fetch(self: *RoleManager, guild_id: Snowflake, id: Snowflake) !?*Role {
+        const guild = try self.client.guilds.cache.touch(self.client, id);
+
+        var req = try self.client.rest_client.create(.GET, endpoints.get_guild_role, .{
+            .guild_id = guild_id,
+            .role_id = id,
+        });
+        errdefer req.deinit();
+
+        const role_response = try req.fetchJson(gateway_message.Role);
+        const role = try self.cache.patch(self.client, try .resolve(role_response.id), role_response);
+        role.meta.patch(.guild, guild);
+        try self.pool.add(role);
+        return role;
+    }
 };
 
 pub const UserManager = struct {
     client: *Client,
 
     cache: Cache(User),
-    pool: Pool(User),
 
     pub fn init(client: *Client) UserManager {
-        return .{ .client = client, .cache = .init(client.allocator), .pool = .init(client.allocator) };
+        return .{ .client = client, .cache = .init(client.allocator) };
     }
 
     pub fn deinit(self: *UserManager) void {
-        self.pool.deinit();
         self.cache.deinit();
+    }
+
+    pub fn getOrFetch(self: *UserManager, id: Snowflake) !?*User {
+        return self.get(id) orelse try self.fetch(id);
+    }
+
+    pub fn get(self: *UserManager, id: Snowflake) ?*User {
+        return self.pool.get(id);
+    }
+
+    pub fn fetch(self: *UserManager, id: Snowflake) !?*User {
+        var req = try self.client.rest_client.create(.GET, endpoints.get_user, .{
+            .user_id = id,
+        });
+        errdefer req.deinit();
+
+        const user_response = try req.fetchJson(gateway_message.User);
+        const user = try self.cache.patch(self.client, try .resolve(user_response.id), user_response);
+        return user;
     }
 };
 
@@ -308,6 +421,7 @@ fn processGuildCreate(self: *Client, arena: std.mem.Allocator, json: std.json.Va
             .{ .unavailable = unavailable_data },
         ),
     };
+    try self.guilds.pool.add(guild);
 
     return .{ .arena = arena, .guild = guild };
 }
@@ -409,6 +523,7 @@ fn processMessageDelete(self: *Client, arena: std.mem.Allocator, json: std.json.
         .not_given => {},
         .val => |guild_id| message.meta.patch(.guild, try self.guilds.cache.touch(self, try .resolve(guild_id))),
     }
+    self.messages.pool.remove(try .resolve(delete_data.id));
 
     return .{ .arena = arena, .message = message };
 }
@@ -609,7 +724,9 @@ pub fn createDM(self: *Client, user_id: Snowflake) !*Channel {
     try jw.endObject();
 
     const channel_response = try req.fetchJson(gateway_message.Channel);
-    return try self.channels.cache.patch(self, try .resolve(channel_response.id), channel_response);
+    const channel = try self.channels.cache.patch(self, try .resolve(channel_response.id), channel_response);
+    try self.channels.add(channel);
+    return channel;
 }
 
 pub fn deleteChannel(self: *Client, channel_id: Snowflake) !void {
