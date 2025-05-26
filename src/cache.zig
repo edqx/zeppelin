@@ -44,6 +44,10 @@ pub fn Pool(comptime Structure: type) type {
             if (@TypeOf(ref) == *Structure or @TypeOf(ref) == *const Structure) return try self.resolve(ref.id);
             return self.get(try Snowflake.resolve(ref));
         }
+
+        pub fn count(self: *PoolT) usize {
+            return self.inner_map.count();
+        }
     };
 }
 

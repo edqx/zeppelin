@@ -25,7 +25,7 @@ pub const Data = union(enum) {
 };
 
 pub const Member = struct {
-    pub const Data = @import("../gateway_message.zig").Guild.Member;
+    pub const Data = gateway_message.Guild.Member;
 
     pub const Flags = packed struct(i32) {
         did_rejoin: bool,
@@ -67,35 +67,51 @@ pub const Member = struct {
         if (self.nick) |nick| allocator.free(nick);
     }
 
-    pub fn patch(self: *Member, data: Member.Data) !void {
+    fn patchUser(self: *Member, user_data: gateway_message.User) !void {
+        const user = try self.guild.context.users.cache.patch(self.guild.context, try .resolve(user_data.id), user_data);
+        self.meta.patch(.user, user);
+    }
+
+    fn patchNick(self: *Member, nick_data: @FieldType(Member.Data, "nick")) !void {
         const allocator = self.guild.context.allocator;
-
-        switch (data.user) {
-            .not_given => {},
-            .val => |data_user| {
-                const user = try self.guild.context.users.cache.patch(self.guild.context, try .resolve(data_user.id), data_user);
-                self.meta.patch(.user, user);
-            },
-        }
-
-        switch (data.nick) {
+        switch (nick_data) {
             .not_given => {},
             .val => |maybe_nick| {
                 if (self.nick) |nick| allocator.free(nick);
                 self.meta.patch(.nick, if (maybe_nick) |data_nick| try allocator.dupe(u8, data_nick) else null);
             },
         }
+    }
 
+    fn patchRoles(self: *Member, roles_data: @FieldType(Member.Data, "roles")) !void {
         self.roles.clear();
 
         const everyone_role = try self.guild.everyoneRole();
         try self.roles.add(everyone_role);
 
-        for (data.roles) |role_id| {
+        for (roles_data) |role_id| {
             const role = try self.guild.context.roles.cache.touch(self.guild.context, try .resolve(role_id));
             role.meta.patch(.guild, self.guild);
             try self.roles.add(role);
         }
+    }
+
+    pub fn patch(self: *Member, data: Member.Data) !void {
+        switch (data.user) {
+            .not_given => {},
+            .val => |inner_data| {
+                try self.patchUser(inner_data);
+            },
+        }
+
+        try self.patchNick(data.nick);
+        try self.patchRoles(data.roles);
+    }
+
+    pub fn patchUpdate(self: *Member, data: gateway_message.payload.GuildMemberUpdate) !void {
+        try self.patchUser(data.user);
+        try self.patchNick(data.nick);
+        try self.patchRoles(data.roles);
     }
 
     pub fn owner(self: *Member) bool {

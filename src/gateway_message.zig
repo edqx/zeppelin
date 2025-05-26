@@ -549,6 +549,23 @@ pub const payload = struct {
         user: User,
     };
 
+    pub const GuildMemberUpdate = struct {
+        guild_id: Snowflake,
+        roles: []Snowflake,
+        user: User,
+        nick: Elective(?[]const u8) = .not_given,
+        avatar: ?[]const u8,
+        banner: ?[]const u8,
+        joined_at: ?Iso8601Timestamp,
+        premium_since: Elective(?Iso8601Timestamp) = .not_given,
+        deaf: Elective(bool) = .not_given,
+        mute: Elective(bool) = .not_given,
+        pending: Elective(bool) = .not_given,
+        communication_disabled_until: Elective(?Iso8601Timestamp) = .not_given,
+        flags: Elective(i32) = .not_given,
+        avatar_decoration_data: Elective(?AvatarDecorationData) = .not_given,
+    };
+
     pub const MessageCreate = struct {
         pub const Extra = struct {
             guild_id: Elective(Snowflake) = .not_given,

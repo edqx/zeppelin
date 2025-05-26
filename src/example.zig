@@ -60,6 +60,12 @@ const Handler = struct {
         std.log.info("Member {s} left!", .{guild_member.nick orelse guild_member.user.username});
     }
 
+    pub fn guildMemberUpdate(self: *Handler, guild_member_update_event: zeppelin.Event.GuildMemberUpdate) !void {
+        _ = self;
+        const guild_member = guild_member_update_event.guild_member;
+        std.log.info("Member '{s}' has {} roles", .{ guild_member.nick orelse guild_member.user.username, guild_member.roles.count() });
+    }
+
     pub fn messageDelete(self: *Handler, message_delete_event: zeppelin.Event.MessageDelete) !void {
         _ = self;
 

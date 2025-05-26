@@ -4,6 +4,8 @@ const Snowflake = @import("../snowflake.zig").Snowflake;
 const QueriedFields = @import("../queryable.zig").QueriedFields;
 const Client = @import("../Client.zig");
 
+const Pool = @import("../cache.zig").Pool;
+
 const Mention = @import("../MessageBuilder.zig").Mention;
 const Permissions = @import("../permissions.zig").Permissions;
 

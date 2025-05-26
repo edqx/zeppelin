@@ -30,6 +30,7 @@ pub const DispatchType = enum {
     guild_create,
     guild_member_add,
     guild_member_remove,
+    guild_member_update,
     message_create,
     message_delete,
 };
@@ -57,6 +58,12 @@ pub const Event = union(DispatchType) {
         guild_member: *Guild.Member,
     };
 
+    pub const GuildMemberUpdate = struct {
+        arena: std.mem.Allocator,
+        guild: *Guild,
+        guild_member: *Guild.Member,
+    };
+
     pub const MessageCreate = struct {
         arena: std.mem.Allocator,
         message: *Message,
@@ -71,9 +78,20 @@ pub const Event = union(DispatchType) {
     guild_create: GuildCreate,
     guild_member_add: GuildMemberAdd,
     guild_member_remove: GuildMemberRemove,
+    guild_member_update: GuildMemberUpdate,
     message_create: MessageCreate,
     message_delete: MessageDelete,
 };
+
+pub const dispatch_event_map: std.StaticStringMap(DispatchType) = .initComptime(.{
+    .{ "READY", .ready },
+    .{ "GUILD_CREATE", .guild_create },
+    .{ "GUILD_MEMBER_ADD", .guild_member_add },
+    .{ "GUILD_MEMBER_REMOVE", .guild_member_remove },
+    .{ "GUILD_MEMBER_UPDATE", .guild_member_update },
+    .{ "MESSAGE_CREATE", .message_create },
+    .{ "MESSAGE_DELETE", .message_delete },
+});
 
 pub const ChannelManager = struct {
     client: *Client,
@@ -268,15 +286,6 @@ pub const UserManager = struct {
     }
 };
 
-pub const dispatch_event_map: std.StaticStringMap(DispatchType) = .initComptime(.{
-    .{ "READY", .ready },
-    .{ "GUILD_CREATE", .guild_create },
-    .{ "GUILD_MEMBER_ADD", .guild_member_add },
-    .{ "GUILD_MEMBER_REMOVE", .guild_member_remove },
-    .{ "MESSAGE_CREATE", .message_create },
-    .{ "MESSAGE_DELETE", .message_delete },
-});
-
 pub const InitOptions = struct {
     allocator: std.mem.Allocator,
     authentication: Authentication,
@@ -447,7 +456,7 @@ fn processGuildMemberAdd(self: *Client, arena: std.mem.Allocator, json: std.json
         .val => |user_data| {
             const user = try users_cache.patch(self, try .resolve(user_data.id), user_data);
             const guild = try guilds_cache.touch(self, try .resolve(guild_id));
-            const guild_member = try guild.members.cache.patch(guild, try .resolve(user.id), guild_member_data);
+            const guild_member = try guild.members.cache.patch(guild, user.id, guild_member_data);
             try guild.members.pool.add(guild_member);
 
             return .{ .arena = arena, .guild = guild, .guild_member = guild_member };
@@ -475,6 +484,23 @@ fn processGuildMemberRemove(self: *Client, arena: std.mem.Allocator, json: std.j
     const guild_member = try guild.members.cache.touch(guild, try .resolve(user_data.id));
     guild.members.pool.remove(try .resolve(user_data.id));
     guild_member.meta.patch(.user, user);
+
+    return .{ .arena = arena, .guild = guild, .guild_member = guild_member };
+}
+
+pub fn processGuildMemberUpdate(self: *Client, arena: std.mem.Allocator, json: std.json.Value) !Event.GuildMemberUpdate {
+    const guild_member_update_data = try std.json.parseFromValueLeaky(
+        gateway_message.payload.GuildMemberUpdate,
+        arena,
+        json,
+        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
+    );
+
+    const user = try self.users.cache.patch(self, try .resolve(guild_member_update_data.user.id), guild_member_update_data.user);
+    const guild = try self.guilds.cache.touch(self, try .resolve(guild_member_update_data.guild_id));
+
+    const guild_member = try guild.members.cache.touch(guild, user.id);
+    try guild_member.patchUpdate(guild_member_update_data);
 
     return .{ .arena = arena, .guild = guild, .guild_member = guild_member };
 }
@@ -546,6 +572,7 @@ pub fn receive(self: *Client, arena: *std.heap.ArenaAllocator) !Event {
                     .guild_create => return .{ .guild_create = try self.processGuildCreate(allocator, dispatch_event.data_json) },
                     .guild_member_add => return .{ .guild_member_add = try self.processGuildMemberAdd(allocator, dispatch_event.data_json) },
                     .guild_member_remove => return .{ .guild_member_remove = try self.processGuildMemberRemove(allocator, dispatch_event.data_json) },
+                    .guild_member_update => return .{ .guild_member_update = try self.processGuildMemberUpdate(allocator, dispatch_event.data_json) },
                     .message_create => return .{ .message_create = try self.processMessageCreate(allocator, dispatch_event.data_json) },
                     .message_delete => return .{ .message_delete = try self.processMessageDelete(allocator, dispatch_event.data_json) },
                 }
@@ -605,6 +632,7 @@ pub fn receiveAndDispatch(self: *Client, handler: anytype) !void {
         .guild_create => |ev| if (@hasDecl(@TypeOf(handler.*), "guildCreate")) try handler.guildCreate(ev),
         .guild_member_add => |ev| if (@hasDecl(@TypeOf(handler.*), "guildMemberAdd")) try handler.guildMemberAdd(ev),
         .guild_member_remove => |ev| if (@hasDecl(@TypeOf(handler.*), "guildMemberRemove")) try handler.guildMemberRemove(ev),
+        .guild_member_update => |ev| if (@hasDecl(@TypeOf(handler.*), "guildMemberUpdate")) try handler.guildMemberUpdate(ev),
         .message_create => |ev| if (@hasDecl(@TypeOf(handler.*), "messageCreate")) try handler.messageCreate(ev),
         .message_delete => |ev| if (@hasDecl(@TypeOf(handler.*), "messageDelete")) try handler.messageDelete(ev),
     }
