@@ -99,14 +99,10 @@ pub fn deinit(self: *Message) void {
 }
 
 pub fn patch(self: *Message, data: Data) !void {
-    const guilds_cache = &self.context.guilds.cache;
-    const channels_cache = &self.context.channels.cache;
-    const users_cache = &self.context.users.cache;
-
     const allocator = self.context.allocator;
 
     if (data.guild_id) |guild_id| {
-        const guild = try guilds_cache.touch(self.context, try .resolve(guild_id));
+        const guild = try self.context.guilds.cache.touch(self.context, try .resolve(guild_id));
         self.meta.patch(.guild, guild);
 
         if (data.member) |data_member| {
@@ -116,8 +112,11 @@ pub fn patch(self: *Message, data: Data) !void {
         }
     }
 
-    self.meta.patch(.channel, try channels_cache.touch(self.context, try .resolve(data.base.channel_id)));
-    self.meta.patch(.author, try users_cache.patch(self.context, try .resolve(data.base.author.id), data.base.author));
+    const channel = try self.context.channels.cache.touch(self.context, try .resolve(data.base.channel_id));
+    self.meta.patch(.channel, channel);
+
+    const author = try self.context.users.cache.patch(self.context, try .resolve(data.base.author.id), data.base.author);
+    self.meta.patch(.author, author);
 
     allocator.free(self.content);
     self.meta.patch(.content, try allocator.dupe(u8, data.base.content));

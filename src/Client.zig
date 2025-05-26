@@ -503,6 +503,7 @@ fn processMessageCreate(self: *Client, arena: std.mem.Allocator, json: std.json.
             .mentions = message_data.extra.mentions,
         },
     );
+    try self.messages.pool.add(message);
 
     return .{ .arena = arena, .message = message };
 }

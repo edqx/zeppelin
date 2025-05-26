@@ -70,13 +70,10 @@ pub const Member = struct {
     pub fn patch(self: *Member, data: Member.Data) !void {
         const allocator = self.guild.context.allocator;
 
-        const users_cache = &self.guild.context.users.cache;
-        const roles_cache = &self.guild.context.roles.cache;
-
         switch (data.user) {
             .not_given => {},
             .val => |data_user| {
-                const user = try users_cache.patch(self.guild.context, try .resolve(data_user.id), data_user);
+                const user = try self.guild.context.users.cache.patch(self.guild.context, try .resolve(data_user.id), data_user);
                 self.meta.patch(.user, user);
             },
         }
@@ -95,7 +92,7 @@ pub const Member = struct {
         try self.roles.add(everyone_role);
 
         for (data.roles) |role_id| {
-            const role = try roles_cache.touch(self.guild.context, try .resolve(role_id));
+            const role = try self.guild.context.roles.cache.touch(self.guild.context, try .resolve(role_id));
             role.meta.patch(.guild, self.guild);
             try self.roles.add(role);
         }
