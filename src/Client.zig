@@ -23,6 +23,8 @@ const Message = @import("structures/Message.zig");
 const Role = @import("structures/Role.zig");
 const User = @import("structures/User.zig");
 
+const StandardGatewayClient = gateway.Client(.{ .compression = .none });
+
 const Client = @This();
 
 pub const DispatchType = enum {
@@ -292,7 +294,7 @@ pub const InitOptions = struct {
 };
 
 allocator: std.mem.Allocator,
-maybe_gateway_client: ?gateway.Client,
+maybe_gateway_client: ?StandardGatewayClient,
 maybe_reconnect_options: ?gateway.Options,
 
 rest_client: Rest,
@@ -341,7 +343,7 @@ pub fn connected(self: *Client) bool {
 }
 
 pub fn disconnect(self: *Client) !void {
-    var gateway_client: *gateway.Client = &(self.maybe_gateway_client orelse return error.NotConnected);
+    var gateway_client: *StandardGatewayClient = &(self.maybe_gateway_client orelse return error.NotConnected);
 
     try gateway_client.disconnect();
     gateway_client.deinit();
@@ -353,7 +355,10 @@ pub fn connectAndLogin(self: *Client, options: gateway.Options) !void {
     if (self.maybe_gateway_client != null) return error.Connected;
     self.maybe_reconnect_options = null;
 
-    self.maybe_gateway_client = try gateway.Client.init(
+    self.maybe_gateway_client = @as(StandardGatewayClient, undefined);
+
+    try StandardGatewayClient.init(
+        &self.maybe_gateway_client.?,
         self.allocator,
         self.rest_client.authentication.resolve(),
         options,
@@ -556,7 +561,7 @@ fn processMessageDelete(self: *Client, arena: std.mem.Allocator, json: std.json.
 }
 
 pub fn receive(self: *Client, arena: *std.heap.ArenaAllocator) !Event {
-    const gateway_client: *gateway.Client = &(self.maybe_gateway_client orelse return error.NotConnected);
+    const gateway_client: *StandardGatewayClient = &(self.maybe_gateway_client orelse return error.NotConnected);
 
     while (true) {
         _ = arena.reset(.retain_capacity);
