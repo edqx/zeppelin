@@ -46,6 +46,13 @@ const Handler = struct {
         }
     }
 
+    pub fn messageUpdate(self: *Handler, message_update_event: zeppelin.Event.MessageUpdate) !void {
+        const message = message_update_event.message;
+        _ = self;
+
+        std.log.info("message update: '{s}'", .{message.content});
+    }
+
     pub fn guildMemberAdd(self: *Handler, guild_member_add_event: zeppelin.Event.GuildMemberAdd) !void {
         _ = self;
         const guild_member = guild_member_add_event.guild_member;

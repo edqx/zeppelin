@@ -592,4 +592,6 @@ pub const payload = struct {
         channel_id: Snowflake,
         guild_id: Elective(Snowflake) = .not_given,
     };
+
+    pub const MessageUpdate = MessageCreate;
 };

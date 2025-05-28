@@ -35,6 +35,7 @@ pub const DispatchType = enum {
     guild_member_update,
     message_create,
     message_delete,
+    message_update,
 };
 
 pub const Event = union(DispatchType) {
@@ -76,6 +77,11 @@ pub const Event = union(DispatchType) {
         message: *Message,
     };
 
+    pub const MessageUpdate = struct {
+        arena: std.mem.Allocator,
+        message: *Message,
+    };
+
     ready: Ready,
     guild_create: GuildCreate,
     guild_member_add: GuildMemberAdd,
@@ -83,6 +89,7 @@ pub const Event = union(DispatchType) {
     guild_member_update: GuildMemberUpdate,
     message_create: MessageCreate,
     message_delete: MessageDelete,
+    message_update: MessageUpdate,
 };
 
 pub const dispatch_event_map: std.StaticStringMap(DispatchType) = .initComptime(.{
@@ -93,6 +100,7 @@ pub const dispatch_event_map: std.StaticStringMap(DispatchType) = .initComptime(
     .{ "GUILD_MEMBER_UPDATE", .guild_member_update },
     .{ "MESSAGE_CREATE", .message_create },
     .{ "MESSAGE_DELETE", .message_delete },
+    .{ "MESSAGE_UPDATE", .message_update },
 });
 
 pub const ChannelManager = struct {
@@ -560,6 +568,35 @@ fn processMessageDelete(self: *Client, arena: std.mem.Allocator, json: std.json.
     return .{ .arena = arena, .message = message };
 }
 
+fn processMessageUpdate(self: *Client, arena: std.mem.Allocator, json: std.json.Value) !Event.MessageUpdate {
+    const update_data = try std.json.parseFromValueLeaky(
+        gateway_message.payload.MessageUpdate,
+        arena,
+        json,
+        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
+    );
+
+    const message = try self.messages.cache.patch(
+        self,
+        try .resolve(update_data.inner_message.id),
+        .{
+            .base = update_data.inner_message,
+            .guild_id = switch (update_data.extra.guild_id) {
+                .not_given => null,
+                .val => |guild_id| guild_id,
+            },
+            .member = switch (update_data.extra.member) {
+                .not_given => null,
+                .val => |member| member,
+            },
+            .mentions = update_data.extra.mentions,
+        },
+    );
+    try self.messages.pool.add(message);
+
+    return .{ .arena = arena, .message = message };
+}
+
 pub fn receive(self: *Client, arena: *std.heap.ArenaAllocator) !Event {
     const gateway_client: *StandardGatewayClient = &(self.maybe_gateway_client orelse return error.NotConnected);
 
@@ -580,6 +617,7 @@ pub fn receive(self: *Client, arena: *std.heap.ArenaAllocator) !Event {
                     .guild_member_update => return .{ .guild_member_update = try self.processGuildMemberUpdate(allocator, dispatch_event.data_json) },
                     .message_create => return .{ .message_create = try self.processMessageCreate(allocator, dispatch_event.data_json) },
                     .message_delete => return .{ .message_delete = try self.processMessageDelete(allocator, dispatch_event.data_json) },
+                    .message_update => return .{ .message_update = try self.processMessageUpdate(allocator, dispatch_event.data_json) },
                 }
             },
             .reconnect => {
@@ -640,6 +678,7 @@ pub fn receiveAndDispatch(self: *Client, handler: anytype) !void {
         .guild_member_update => |ev| if (@hasDecl(@TypeOf(handler.*), "guildMemberUpdate")) try handler.guildMemberUpdate(ev),
         .message_create => |ev| if (@hasDecl(@TypeOf(handler.*), "messageCreate")) try handler.messageCreate(ev),
         .message_delete => |ev| if (@hasDecl(@TypeOf(handler.*), "messageDelete")) try handler.messageDelete(ev),
+        .message_update => |ev| if (@hasDecl(@TypeOf(handler.*), "messageUpdate")) try handler.messageUpdate(ev),
     }
 }
 
