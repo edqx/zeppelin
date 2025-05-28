@@ -16,6 +16,11 @@ const Handler = struct {
         std.log.info("Logged in as {s}", .{self.own_user.username});
     }
 
+    pub fn userUpdate(self: *Handler, user_update_event: zeppelin.Event.UserUpdate) !void {
+        _ = self;
+        std.log.info("User new name: {s}", .{user_update_event.user.username});
+    }
+
     pub fn messageCreate(self: *Handler, message_create_event: zeppelin.Event.MessageCreate) !void {
         // const allocator = message_create_event.arena;
         const message = message_create_event.message;

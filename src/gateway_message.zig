@@ -479,6 +479,8 @@ pub const payload = struct {
         },
     };
 
+    pub const UserUpdate = User;
+
     pub const GuildCreate = union(enum) {
         pub const Available = struct {
             pub const Extra = struct {

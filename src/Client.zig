@@ -29,6 +29,7 @@ const Client = @This();
 
 pub const DispatchType = enum {
     ready,
+    user_update,
     guild_create,
     guild_member_add,
     guild_member_remove,
@@ -40,6 +41,11 @@ pub const DispatchType = enum {
 
 pub const Event = union(DispatchType) {
     pub const Ready = struct {
+        arena: std.mem.Allocator,
+        user: *User,
+    };
+
+    pub const UserUpdate = struct {
         arena: std.mem.Allocator,
         user: *User,
     };
@@ -83,6 +89,7 @@ pub const Event = union(DispatchType) {
     };
 
     ready: Ready,
+    user_update: UserUpdate,
     guild_create: GuildCreate,
     guild_member_add: GuildMemberAdd,
     guild_member_remove: GuildMemberRemove,
@@ -94,6 +101,7 @@ pub const Event = union(DispatchType) {
 
 pub const dispatch_event_map: std.StaticStringMap(DispatchType) = .initComptime(.{
     .{ "READY", .ready },
+    .{ "USER_UPDATE", .user_update },
     .{ "GUILD_CREATE", .guild_create },
     .{ "GUILD_MEMBER_ADD", .guild_member_add },
     .{ "GUILD_MEMBER_REMOVE", .guild_member_remove },
@@ -419,6 +427,23 @@ fn processReadyEvent(self: *Client, arena: std.mem.Allocator, json: std.json.Val
     return .{ .arena = arena, .user = user };
 }
 
+fn processUserUpdate(self: *Client, arena: std.mem.Allocator, json: std.json.Value) !Event.UserUpdate {
+    const user_update_data = try std.json.parseFromValueLeaky(
+        gateway_message.payload.UserUpdate,
+        arena,
+        json,
+        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
+    );
+
+    const user = try self.users.cache.patch(
+        self,
+        try .resolve(user_update_data.id),
+        user_update_data,
+    );
+
+    return .{ .arena = arena, .user = user };
+}
+
 fn processGuildCreate(self: *Client, arena: std.mem.Allocator, json: std.json.Value) !Event.GuildCreate {
     const guild_data = try std.json.parseFromValueLeaky(
         gateway_message.payload.GuildCreate,
@@ -611,6 +636,7 @@ pub fn receive(self: *Client, arena: *std.heap.ArenaAllocator) !Event {
 
                 switch (dispatch_event_type) {
                     .ready => return .{ .ready = try self.processReadyEvent(allocator, dispatch_event.data_json) },
+                    .user_update => return .{ .user_update = try self.processUserUpdate(allocator, dispatch_event.data_json) },
                     .guild_create => return .{ .guild_create = try self.processGuildCreate(allocator, dispatch_event.data_json) },
                     .guild_member_add => return .{ .guild_member_add = try self.processGuildMemberAdd(allocator, dispatch_event.data_json) },
                     .guild_member_remove => return .{ .guild_member_remove = try self.processGuildMemberRemove(allocator, dispatch_event.data_json) },
@@ -672,6 +698,7 @@ pub fn receiveAndDispatch(self: *Client, handler: anytype) !void {
 
     switch (event) {
         .ready => |ev| if (@hasDecl(@TypeOf(handler.*), "ready")) try handler.ready(ev),
+        .user_update => |ev| if (@hasDecl(@TypeOf(handler.*), "userUpdate")) try handler.userUpdate(ev),
         .guild_create => |ev| if (@hasDecl(@TypeOf(handler.*), "guildCreate")) try handler.guildCreate(ev),
         .guild_member_add => |ev| if (@hasDecl(@TypeOf(handler.*), "guildMemberAdd")) try handler.guildMemberAdd(ev),
         .guild_member_remove => |ev| if (@hasDecl(@TypeOf(handler.*), "guildMemberRemove")) try handler.guildMemberRemove(ev),
