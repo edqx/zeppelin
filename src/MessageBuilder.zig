@@ -127,6 +127,30 @@ pub const FieldBuilder = struct {
 };
 
 pub const EmbedBuilder = struct {
+    const ImageRef = union(enum) {
+        url: []const u8,
+        attachment: []const u8,
+
+        pub fn dupe(self: ImageRef, allocator: std.mem.Allocator) !ImageRef {
+            return switch (self) {
+                inline .url, .attachment => |s, t| @unionInit(ImageRef, @tagName(t), try allocator.dupe(u8, s)),
+            };
+        }
+
+        pub fn deinit(self: ImageRef, allocator: std.mem.Allocator) void {
+            switch (self) {
+                inline .url, .attachment => |s| allocator.free(s),
+            }
+        }
+
+        pub fn jsonStringify(self: ImageRef, jw: anytype) !void {
+            switch (self) {
+                .url => |s| try jw.write(s),
+                .attachment => |s| try jw.print("\"attachment://{s}\"", .{s}),
+            }
+        }
+    };
+
     allocator: std.mem.Allocator,
 
     _title: std.ArrayListUnmanaged(u8) = .empty,
@@ -138,15 +162,15 @@ pub const EmbedBuilder = struct {
     _color: ?Color = null,
 
     _footer_text: std.ArrayListUnmanaged(u8) = .empty,
-    _footer_icon_url: []const u8 = &.{},
+    _footer_icon_ref: ?ImageRef = null,
 
-    _image_url: []const u8 = &.{},
-    _thumbnail_url: []const u8 = &.{},
+    _image_ref: ?ImageRef = null,
+    _thumbnail_ref: ?ImageRef = null,
     _video_url: []const u8 = &.{},
 
     _author_name: []const u8 = &.{},
     _author_url: []const u8 = &.{},
-    _author_icon_url: []const u8 = &.{},
+    _author_icon_ref: ?ImageRef = null,
 
     _fields: std.BoundedArray(FieldBuilder, 25) = .{},
 
@@ -157,15 +181,15 @@ pub const EmbedBuilder = struct {
             field_builder.deinit();
         }
 
-        s.allocator.free(s._author_icon_url);
+        if (s._author_icon_ref) |ref| ref.deinit(s.allocator);
         s.allocator.free(s._author_url);
         s.allocator.free(s._author_name);
 
         s.allocator.free(s._video_url);
-        s.allocator.free(s._thumbnail_url);
-        s.allocator.free(s._image_url);
+        if (s._thumbnail_ref) |ref| ref.deinit(s.allocator);
+        if (s._image_ref) |ref| ref.deinit(s.allocator);
 
-        s.allocator.free(s._footer_icon_url);
+        if (s._footer_icon_ref) |ref| ref.deinit(s.allocator);
         s._footer_text.deinit(s.allocator);
 
         s.allocator.free(s._url);
@@ -206,31 +230,31 @@ pub const EmbedBuilder = struct {
         return self._footer_text.writer();
     }
 
-    pub fn footerIcon(self: *EmbedBuilder, icon_url: []const u8) !void {
-        self._footer_icon_url = try self.allocator.dupe(u8, icon_url);
+    pub fn footerIcon(self: *EmbedBuilder, icon_ref: ImageRef) !void {
+        self._footer_icon_ref = try icon_ref.dupe(self.allocator);
     }
 
-    pub fn footer(self: *EmbedBuilder, comptime fmt: []const u8, args: anytype, icon_url: ?[]const u8) !void {
+    pub fn footer(self: *EmbedBuilder, comptime fmt: []const u8, args: anytype, icon_ref: ?ImageRef) !void {
         try self.footerWriter().print(fmt, args);
-        if (icon_url) |s| try self.footerIcon(s);
+        if (icon_ref) |ref| try self.footerIcon(ref);
     }
 
-    pub fn image(self: *EmbedBuilder, image_url: []const u8) !void {
-        self._image_url = try self.allocator.dupe(u8, image_url);
+    pub fn image(self: *EmbedBuilder, image_ref: ImageRef) !void {
+        self._image_ref = try image_ref.dupe(self.allocator);
     }
 
-    pub fn thumbnail(self: *EmbedBuilder, thumbnail_url: []const u8) !void {
-        self._thumbnail_url = try self.allocator.dupe(u8, thumbnail_url);
+    pub fn thumbnail(self: *EmbedBuilder, image_ref: ImageRef) !void {
+        self._thumbnail_ref = try image_ref.dupe(self.allocator);
     }
 
     pub fn video(self: *EmbedBuilder, video_url: []const u8) !void {
         self._video_url = try self.allocator.dupe(u8, video_url);
     }
 
-    pub fn author(self: *EmbedBuilder, name: []const u8, author_url: ?[]const u8, icon_url: ?[]const u8) !void {
+    pub fn author(self: *EmbedBuilder, name: []const u8, author_url: ?[]const u8, icon_ref: ?ImageRef) !void {
         self._author_name = try self.allocator.dupe(u8, name);
         if (author_url) |s| self._author_url = try self.allocator.dupe(u8, s);
-        if (icon_url) |s| self._author_icon_url = try self.allocator.dupe(u8, s);
+        if (icon_ref) |ref| self._author_icon_ref = try ref.dupe(self.allocator);
     }
 
     pub fn addField(self: *EmbedBuilder, field_builder: FieldBuilder) !void {
@@ -268,34 +292,34 @@ pub const EmbedBuilder = struct {
             try jw.objectField("color");
             try jw.write(_color);
         }
-        if (self._footer_text.items.len > 0 or self._footer_icon_url.len > 0) {
+        if (self._footer_text.items.len > 0 or self._footer_icon_ref != null) {
             try jw.objectField("footer");
             try jw.beginObject();
             {
                 try jw.objectField("text");
                 try jw.write(self._footer_text.items);
             }
-            if (self._footer_icon_url.len > 0) {
+            if (self._footer_icon_ref) |ref| {
                 try jw.objectField("icon_url");
-                try jw.write(self._footer_icon_url);
+                try jw.write(ref);
             }
             try jw.endObject();
         }
-        if (self._image_url.len > 0) {
+        if (self._image_ref) |ref| {
             try jw.objectField("image");
             try jw.beginObject();
             {
                 try jw.objectField("url");
-                try jw.write(self._image_url);
+                try jw.write(ref);
             }
             try jw.endObject();
         }
-        if (self._thumbnail_url.len > 0) {
+        if (self._thumbnail_ref) |ref| {
             try jw.objectField("thumbnail");
             try jw.beginObject();
             {
                 try jw.objectField("url");
-                try jw.write(self._thumbnail_url);
+                try jw.write(ref);
             }
             try jw.endObject();
         }
@@ -308,7 +332,7 @@ pub const EmbedBuilder = struct {
             }
             try jw.endObject();
         }
-        if (self._author_name.len > 0 or self._author_url.len > 0 or self._author_icon_url.len > 0) {
+        if (self._author_name.len > 0 or self._author_url.len > 0 or self._author_icon_ref != null) {
             try jw.objectField("author");
             try jw.beginObject();
             {
@@ -319,9 +343,9 @@ pub const EmbedBuilder = struct {
                 try jw.objectField("url");
                 try jw.write(self._author_url);
             }
-            if (self._author_icon_url.len > 0) {
+            if (self._author_icon_ref) |ref| {
                 try jw.objectField("icon_url");
-                try jw.write(self._author_icon_url);
+                try jw.write(ref);
             }
             try jw.endObject();
         }

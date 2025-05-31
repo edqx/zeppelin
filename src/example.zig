@@ -34,7 +34,7 @@ const Handler = struct {
 
             {
                 const writer = builder.contentWriter();
-                try writer.print("Oliver smale is a descendant of poop", .{});
+                try writer.print("Charles is a descendant of poop", .{});
             }
 
             {
@@ -44,7 +44,7 @@ const Handler = struct {
 
                 embed.color(.{ .r = 255, .g = 255, .b = 0 });
 
-                try embed.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Black_Labrador_Retriever_-_Male_IMG_3323.jpg/1920px-Black_Labrador_Retriever_-_Male_IMG_3323.jpg");
+                try embed.image(.{ .attachment = "barney.png" });
 
                 const field1 = try embed.field();
                 try field1.title("Who is Machiavelli?", .{});
@@ -67,7 +67,22 @@ const Handler = struct {
                 try writer.print(" and said, \"I do believe; help my unbelief!\"", .{});
             }
 
-            _ = try message.channel.inner.guild_text.createMessage(builder);
+            var message_writer = try message.channel.inner.guild_text.messageWriter();
+
+            try message_writer.write(builder);
+
+            try message_writer.beginAttachment("image/png", "barney.png");
+
+            var file = try std.fs.cwd().openFile("barney.png", .{});
+            defer file.close();
+
+            var fifo: std.fifo.LinearFifo(u8, .{ .Static = 4096 }) = .init();
+
+            try fifo.pump(file.reader(), message_writer.writer());
+
+            try message_writer.end();
+
+            _ = try message_writer.create();
         }
     }
 
