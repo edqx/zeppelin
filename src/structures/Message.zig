@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const Snowflake = @import("../snowflake.zig").Snowflake;
 const QueriedFields = @import("../queryable.zig").QueriedFields;
@@ -79,13 +80,34 @@ pub const Flags = packed struct(i32) {
     _packed2: enum(u15) { unset } = .unset,
 };
 
+// pub const Color = switch (builtin.target.cpu.arch.endian()) {
+//     .little => packed struct(u24) {
+//         b: u8,
+//         g: u8,
+//         r: u8,
+
+//         pub fn jsonStringify(self: Color, jw: anytype) !void {
+//             try jw.write(@as(u24, @bitCast(self)));
+//         }
+//     },
+//     .big => packed struct(u24) {
+//         r: u8,
+//         g: u8,
+//         b: u8,
+
+//         pub fn jsonStringify(self: Color, jw: anytype) !void {
+//             try jw.write(@as(u24, @bitCast(self)));
+//         }
+//     },
+// };
+
 pub const Color = packed struct(u24) {
     r: u8,
     g: u8,
     b: u8,
 
     pub fn jsonStringify(self: Color, jw: anytype) !void {
-        try jw.write(std.mem.nativeToBig(u24, @bitCast(self)));
+        try jw.write(std.mem.nativeTo(u24, @bitCast(self), .big));
     }
 };
 
