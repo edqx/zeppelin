@@ -194,11 +194,11 @@ pub const EmbedBuilder = struct {
         self._url = try self.allocator.dupe(u8, _url);
     }
 
-    pub fn timestamp(self: *EmbedBuilder, _timestamp: i64) !void {
+    pub fn timestamp(self: *EmbedBuilder, _timestamp: i64) void {
         self._timestamp = _timestamp;
     }
 
-    pub fn color(self: *EmbedBuilder, _color: Color) !void {
+    pub fn color(self: *EmbedBuilder, _color: Color) void {
         self._color = _color;
     }
 
@@ -266,7 +266,7 @@ pub const EmbedBuilder = struct {
         }
         if (self._color) |_color| {
             try jw.objectField("color");
-            try jw.write(@as(u32, @bitCast(_color)));
+            try jw.write(_color);
         }
         if (self._footer_text.items.len > 0 or self._footer_icon_url.len > 0) {
             try jw.objectField("footer");

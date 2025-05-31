@@ -42,6 +42,8 @@ const Handler = struct {
                 try embed.title("Hello", .{});
                 try embed.description("among us is the true machiavellian reality", .{});
 
+                embed.color(.{ .r = 255, .g = 255, .b = 0 });
+
                 try embed.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Black_Labrador_Retriever_-_Male_IMG_3323.jpg/1920px-Black_Labrador_Retriever_-_Male_IMG_3323.jpg");
 
                 const field1 = try embed.field();

@@ -79,11 +79,14 @@ pub const Flags = packed struct(i32) {
     _packed2: enum(u15) { unset } = .unset,
 };
 
-pub const Color = packed struct(u32) {
+pub const Color = packed struct(u24) {
     r: u8,
     g: u8,
     b: u8,
-    a: u8,
+
+    pub fn jsonStringify(self: Color, jw: anytype) !void {
+        try jw.write(std.mem.nativeToBig(u24, @bitCast(self)));
+    }
 };
 
 meta: QueriedFields(Message, &.{
