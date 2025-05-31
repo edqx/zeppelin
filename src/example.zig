@@ -22,32 +22,50 @@ const Handler = struct {
     }
 
     pub fn messageCreate(self: *Handler, message_create_event: zeppelin.Event.MessageCreate) !void {
-        // const allocator = message_create_event.arena;
+        const allocator = message_create_event.arena;
         const message = message_create_event.message;
 
         if (self.own_user.id == message.author.id) return;
 
         if (!message.meta.queried(.member)) return;
 
-        if (std.mem.eql(u8, message.content, "delete channel")) {
-            try message.channel.delete();
-        }
+        if (std.mem.eql(u8, message.content, "embed")) {
+            var builder: zeppelin.MessageBuilder = .{ .allocator = allocator };
 
-        if (std.mem.eql(u8, message.content, "get fetch")) {
-            const role = try self.client.roles.fetch(try .resolve("746067864481431562"), try .resolve("1079505451898654811"));
-            if (role != null) std.log.info("role name: '{s}'", .{role.?.name});
+            {
+                const writer = builder.contentWriter();
+                try writer.print("Oliver smale is a descendant of poop", .{});
+            }
 
-            const guild = try self.client.guilds.fetch(try .resolve("977680021374259260"));
-            if (guild != null) std.log.info("guild: '{s}'", .{guild.?.name});
+            {
+                const embed = try builder.embed();
+                try embed.title("Hello", .{});
+                try embed.description("among us is the true machiavellian reality", .{});
 
-            const message2 = try self.client.messages.fetch(try .resolve("746068477906911392"), try .resolve("1376238616077926423"));
-            if (message2 != null) std.log.info("message: '{s}'", .{message2.?.content});
+                try embed.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Black_Labrador_Retriever_-_Male_IMG_3323.jpg/1920px-Black_Labrador_Retriever_-_Male_IMG_3323.jpg");
 
-            const channel = try self.client.channels.fetch(try .resolve("1072574660203528253"));
-            if (channel != null) std.log.info("channel: '{s}'", .{channel.?.inner.guild_text.name.?});
+                const field1 = try embed.field();
+                try field1.title("Who is Machiavelli?", .{});
+                try field1.body("The impostor!", .{});
 
-            const user = try self.client.users.fetch(try .resolve("1001475015285407825"));
-            if (user != null) std.log.info("user: '{s}'", .{user.?.username});
+                const field2 = try embed.field();
+                try field2.title("Who is Plato?", .{});
+                try field2.body("Greek Philosopher", .{});
+
+                const field3 = try embed.field();
+                try field3.title("Who is Barney?", .{});
+                try field3.body("doge", .{});
+            }
+            {
+                const embed2 = try builder.embed();
+                try embed2.title("Mark 9:24", .{});
+
+                const writer = embed2.descriptionWriter();
+                try writer.print("Immediately the boy's father {s}", .{"cried out"});
+                try writer.print(" and said, \"I do believe; help my unbelief!\"", .{});
+            }
+
+            _ = try message.channel.inner.guild_text.createMessage(builder);
         }
     }
 

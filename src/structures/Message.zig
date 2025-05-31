@@ -79,6 +79,13 @@ pub const Flags = packed struct(i32) {
     _packed2: enum(u15) { unset } = .unset,
 };
 
+pub const Color = packed struct(u32) {
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8,
+};
+
 meta: QueriedFields(Message, &.{
     "guild",  "channel", "author",
     "member", "content",

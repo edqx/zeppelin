@@ -335,7 +335,66 @@ pub const Channel = struct {
 };
 
 pub const Attachment = std.json.Value; // TODO
-pub const Embed = std.json.Value; // TODO
+pub const Embed = struct {
+    pub const Footer = struct {
+        text: []const u8,
+        icon_url: Elective([]const u8) = .not_given,
+        proxy_icon_url: Elective([]const u8) = .not_given,
+    };
+
+    pub const Image = struct {
+        url: []const u8,
+        proxy_url: Elective([]const u8) = .not_given,
+        height: Elective(i32) = .not_given,
+        width: Elective(i32) = .not_given,
+    };
+
+    pub const Thumbnail = struct {
+        url: []const u8,
+        proxy_url: Elective([]const u8) = .not_given,
+        height: Elective(i32) = .not_given,
+        width: Elective(i32) = .not_given,
+    };
+
+    pub const Video = struct {
+        url: Elective([]const u8) = .not_given,
+        proxy_url: Elective([]const u8) = .not_given,
+        height: Elective(i32) = .not_given,
+        width: Elective(i32) = .not_given,
+    };
+
+    pub const Provider = struct {
+        name: Elective([]const u8) = .not_given,
+        url: Elective([]const u8) = .not_given,
+    };
+
+    pub const Author = struct {
+        name: []const u8,
+        url: Elective([]const u8) = .not_given,
+        icon_url: Elective([]const u8) = .not_given,
+        proxy_icon_url: Elective([]const u8) = .not_given,
+    };
+
+    pub const Field = struct {
+        name: []const u8,
+        value: []const u8,
+        @"inline": Elective(bool) = .not_given,
+    };
+
+    title: Elective([]const u8) = .not_given,
+    type: Elective([]const u8) = .not_given,
+    description: Elective([]const u8) = .not_given,
+    url: Elective([]const u8) = .not_given,
+    timestamp: Elective(Iso8601Timestamp) = .not_given,
+    color: Elective(i32) = .not_given,
+    footer: Elective(Footer) = .not_given,
+    image: Elective(Image) = .not_given,
+    thumbnail: Elective(Thumbnail) = .not_given,
+    video: Elective(Video) = .not_given,
+    provider: Elective(Provider) = .not_given,
+    author: Elective(Author) = .not_given,
+    fields: Elective([]Field) = .not_given,
+}; // TODO
 pub const Reaction = struct {
     pub const Default = struct {
         emoji_id: ?Snowflake,
