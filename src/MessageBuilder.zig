@@ -227,7 +227,7 @@ pub const EmbedBuilder = struct {
     }
 
     pub fn footerWriter(self: *EmbedBuilder) std.ArrayListUnmanaged(u8).Writer {
-        return self._footer_text.writer();
+        return self._footer_text.writer(self.allocator);
     }
 
     pub fn footerIcon(self: *EmbedBuilder, icon_ref: ImageRef) !void {

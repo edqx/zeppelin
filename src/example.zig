@@ -34,29 +34,31 @@ const Handler = struct {
 
             {
                 const writer = builder.contentWriter();
-                try writer.print("Charles is a descendant of poop", .{});
+                try writer.print("Jesus is a descendent of Jesus", .{});
             }
 
             {
                 const embed = try builder.embed();
-                try embed.title("Hello", .{});
-                try embed.description("among us is the true machiavellian reality", .{});
+                try embed.title("Philosophers", .{});
+                try embed.description("Here are a list of philosophers", .{});
 
                 embed.color(.{ .r = 255, .g = 255, .b = 0 });
 
                 try embed.image(.{ .attachment = "barney.png" });
 
                 const field1 = try embed.field();
-                try field1.title("Who is Machiavelli?", .{});
-                try field1.body("The impostor!", .{});
+                try field1.title("Who is Aristotle?", .{});
+                try field1.body("Greek Philosopher", .{});
 
                 const field2 = try embed.field();
                 try field2.title("Who is Plato?", .{});
                 try field2.body("Greek Philosopher", .{});
 
                 const field3 = try embed.field();
-                try field3.title("Who is Barney?", .{});
-                try field3.body("doge", .{});
+                try field3.title("Who is Kant?", .{});
+                try field3.body("German Philosopher", .{});
+
+                try embed.footer("This is a footer", .{}, .{ .attachment = "barney.png" });
             }
             {
                 const embed2 = try builder.embed();
