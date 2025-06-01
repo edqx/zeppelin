@@ -375,10 +375,8 @@ pub fn connected(self: *Client) bool {
 pub fn disconnect(self: *Client) !void {
     var gateway_client: *StandardGatewayClient = &(self.maybe_gateway_client orelse return error.NotConnected);
 
-    try gateway_client.disconnect();
-    gateway_client.deinit();
-    self.maybe_gateway_client = null;
     self.clearReconnect();
+    try gateway_client.disconnect();
 }
 
 pub fn connectAndLogin(self: *Client, options: gateway.Options) !void {
@@ -644,7 +642,16 @@ pub fn receive(self: *Client, arena: *std.heap.ArenaAllocator) !Event {
 
         const allocator = arena.allocator();
 
-        switch (try gateway_client.readMessage(allocator)) {
+        const message = gateway_client.readMessage(allocator) catch |e| switch (e) {
+            error.TlsConnectionTruncated => {
+                gateway_client.deinit();
+                self.maybe_gateway_client = null;
+                return error.Disconnected;
+            },
+            else => return e,
+        };
+
+        switch (message) {
             .dispatch_event => |dispatch_event| {
                 const dispatch_event_type = dispatch_event_map.get(dispatch_event.name) orelse continue;
 

@@ -56,6 +56,11 @@ pub fn EventPool(comptime Handler: type) type {
                 errdefer arena.deinit();
 
                 const event = self.client.receive(arena) catch |e| switch (e) {
+                    error.Disconnected => {
+                        arena.deinit();
+                        self.allocator.destroy(arena);
+                        return;
+                    },
                     error.RateLimited,
                     error.TimedOut,
                     error.AuthenticationFailed,
@@ -64,6 +69,7 @@ pub fn EventPool(comptime Handler: type) type {
                     => {
                         if (self.client.maybe_reconnect_options) |reconnect_options| {
                             arena.deinit();
+                            self.allocator.destroy(arena);
                             try self.client.connectAndLogin(reconnect_options);
                             continue;
                         } else {

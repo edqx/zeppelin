@@ -12,7 +12,6 @@ const Handler = struct {
 
     pub fn ready(self: *Handler, ready_event: zeppelin.Event.Ready) !void {
         self.own_user = ready_event.user;
-
         std.log.info("Logged in as {s}", .{self.own_user.username});
     }
 
@@ -23,107 +22,17 @@ const Handler = struct {
 
     pub fn messageCreate(self: *Handler, message_create_event: zeppelin.Event.MessageCreate) !void {
         const allocator = message_create_event.arena;
+        _ = allocator;
+
         const message = message_create_event.message;
 
         if (self.own_user.id == message.author.id) return;
 
         if (!message.meta.queried(.member)) return;
 
-        if (std.mem.eql(u8, message.content, "embed")) {
-            var builder: zeppelin.MessageBuilder = .{ .allocator = allocator };
-
-            {
-                const writer = builder.contentWriter();
-                try writer.print("Jesus is a descendent of Jesus", .{});
-            }
-
-            {
-                const embed = try builder.embed();
-                try embed.title("Philosophers", .{});
-                try embed.description("Here are a list of philosophers", .{});
-
-                embed.color(.{ .r = 255, .g = 255, .b = 0 });
-
-                try embed.image(.{ .attachment = "barney.png" });
-
-                const field1 = try embed.field();
-                try field1.title("Who is Aristotle?", .{});
-                try field1.body("Greek Philosopher", .{});
-
-                const field2 = try embed.field();
-                try field2.title("Who is Plato?", .{});
-                try field2.body("Greek Philosopher", .{});
-
-                const field3 = try embed.field();
-                try field3.title("Who is Kant?", .{});
-                try field3.body("German Philosopher", .{});
-
-                try embed.footer("This is a footer", .{}, .{ .attachment = "barney.png" });
-            }
-            {
-                const embed2 = try builder.embed();
-                try embed2.title("Mark 9:24", .{});
-
-                const writer = embed2.descriptionWriter();
-                try writer.print("Immediately the boy's father {s}", .{"cried out"});
-                try writer.print(" and said, \"I do believe; help my unbelief!\"", .{});
-            }
-
-            var message_writer = try message.channel.inner.guild_text.messageWriter();
-
-            try message_writer.write(builder);
-
-            try message_writer.beginAttachment("image/png", "barney.png");
-
-            var file = try std.fs.cwd().openFile("barney.png", .{});
-            defer file.close();
-
-            var fifo: std.fifo.LinearFifo(u8, .{ .Static = 4096 }) = .init();
-
-            try fifo.pump(file.reader(), message_writer.writer());
-
-            try message_writer.end();
-
-            _ = try message_writer.create();
+        if (std.mem.eql(u8, message.content, "disconnect")) {
+            try self.client.disconnect();
         }
-    }
-
-    pub fn messageUpdate(self: *Handler, message_update_event: zeppelin.Event.MessageUpdate) !void {
-        const message = message_update_event.message;
-        _ = self;
-
-        std.log.info("message update: '{s}'", .{message.content});
-    }
-
-    pub fn guildMemberAdd(self: *Handler, guild_member_add_event: zeppelin.Event.GuildMemberAdd) !void {
-        _ = self;
-        const guild_member = guild_member_add_event.guild_member;
-
-        std.log.info("Member {s} joined!", .{guild_member.nick orelse guild_member.user.username});
-    }
-
-    pub fn guildMemberRemove(self: *Handler, guild_member_remove_event: zeppelin.Event.GuildMemberRemove) !void {
-        _ = self;
-        const guild_member = guild_member_remove_event.guild_member;
-
-        std.log.info("Member {s} left!", .{guild_member.nick orelse guild_member.user.username});
-    }
-
-    pub fn guildMemberUpdate(self: *Handler, guild_member_update_event: zeppelin.Event.GuildMemberUpdate) !void {
-        _ = self;
-        const guild_member = guild_member_update_event.guild_member;
-        std.log.info("Member '{s}' has {} roles", .{ guild_member.nick orelse guild_member.user.username, guild_member.roles.count() });
-    }
-
-    pub fn messageDelete(self: *Handler, message_delete_event: zeppelin.Event.MessageDelete) !void {
-        _ = self;
-
-        const allocator = message_delete_event.arena;
-        const message = message_delete_event.message;
-
-        if (!message.meta.queried(.content)) return;
-
-        _ = try message.channel.inner.guild_text.createMessage(try .simple(allocator, "babe don't delete your message: '{s}'", .{message.content}));
     }
 };
 
