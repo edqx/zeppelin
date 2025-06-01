@@ -97,6 +97,20 @@ pub const Event = union(DispatchType) {
     message_create: MessageCreate,
     message_delete: MessageDelete,
     message_update: MessageUpdate,
+
+    pub fn dispatch(event: Event, handler: anytype) !void {
+        switch (event) {
+            .ready => |ev| if (@hasDecl(@TypeOf(handler.*), "ready")) try handler.ready(ev),
+            .user_update => |ev| if (@hasDecl(@TypeOf(handler.*), "userUpdate")) try handler.userUpdate(ev),
+            .guild_create => |ev| if (@hasDecl(@TypeOf(handler.*), "guildCreate")) try handler.guildCreate(ev),
+            .guild_member_add => |ev| if (@hasDecl(@TypeOf(handler.*), "guildMemberAdd")) try handler.guildMemberAdd(ev),
+            .guild_member_remove => |ev| if (@hasDecl(@TypeOf(handler.*), "guildMemberRemove")) try handler.guildMemberRemove(ev),
+            .guild_member_update => |ev| if (@hasDecl(@TypeOf(handler.*), "guildMemberUpdate")) try handler.guildMemberUpdate(ev),
+            .message_create => |ev| if (@hasDecl(@TypeOf(handler.*), "messageCreate")) try handler.messageCreate(ev),
+            .message_delete => |ev| if (@hasDecl(@TypeOf(handler.*), "messageDelete")) try handler.messageDelete(ev),
+            .message_update => |ev| if (@hasDecl(@TypeOf(handler.*), "messageUpdate")) try handler.messageUpdate(ev),
+        }
+    }
 };
 
 pub const dispatch_event_map: std.StaticStringMap(DispatchType) = .initComptime(.{
@@ -695,18 +709,7 @@ pub fn receiveAndDispatch(self: *Client, handler: anytype) !void {
     defer arena.deinit();
 
     const event = try self.receive(&arena);
-
-    switch (event) {
-        .ready => |ev| if (@hasDecl(@TypeOf(handler.*), "ready")) try handler.ready(ev),
-        .user_update => |ev| if (@hasDecl(@TypeOf(handler.*), "userUpdate")) try handler.userUpdate(ev),
-        .guild_create => |ev| if (@hasDecl(@TypeOf(handler.*), "guildCreate")) try handler.guildCreate(ev),
-        .guild_member_add => |ev| if (@hasDecl(@TypeOf(handler.*), "guildMemberAdd")) try handler.guildMemberAdd(ev),
-        .guild_member_remove => |ev| if (@hasDecl(@TypeOf(handler.*), "guildMemberRemove")) try handler.guildMemberRemove(ev),
-        .guild_member_update => |ev| if (@hasDecl(@TypeOf(handler.*), "guildMemberUpdate")) try handler.guildMemberUpdate(ev),
-        .message_create => |ev| if (@hasDecl(@TypeOf(handler.*), "messageCreate")) try handler.messageCreate(ev),
-        .message_delete => |ev| if (@hasDecl(@TypeOf(handler.*), "messageDelete")) try handler.messageDelete(ev),
-        .message_update => |ev| if (@hasDecl(@TypeOf(handler.*), "messageUpdate")) try handler.messageUpdate(ev),
-    }
+    try self.dispatch(event, handler);
 }
 
 pub const MessageWriter = struct {

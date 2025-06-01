@@ -6,19 +6,56 @@ pub fn EventPool(comptime Handler: type) type {
     return struct {
         const EventPoolT = @This();
 
-        client: *Client,
-        handler: *Handler,
         allocator: std.mem.Allocator,
 
-        pub fn deinit(self: EventPoolT) void {
-            _ = self;
+        client: *Client,
+        handler: *Handler,
+
+        thread_pool: std.Thread.Pool,
+
+        pub fn init(self: *EventPoolT, allocator: std.mem.Allocator, client: *Client, handler: *Handler) !void {
+            self.* = .{
+                .allocator = allocator,
+                .client = client,
+                .handler = handler,
+                .thread_pool = undefined,
+            };
+
+            try self.thread_pool.init(.{
+                .allocator = allocator,
+            });
         }
 
-        pub fn start(self: EventPoolT) !void {
+        pub fn deinit(self: *EventPoolT) void {
+            self.thread_pool.deinit();
+        }
+
+        pub fn dispatchThreadImpl(self: *EventPoolT, arena: *std.heap.ArenaAllocator, event: Client.Event) !void {
+            defer self.allocator.destroy(arena);
+            defer arena.deinit();
+            try Client.Event.dispatch(event, self.handler);
+        }
+
+        pub fn dispatchThread(self: *EventPoolT, arena: *std.heap.ArenaAllocator, event: Client.Event) void {
+            self.dispatchThreadImpl(arena, event) catch |err| {
+                std.log.err("{s}", .{@errorName(err)});
+                if (@errorReturnTrace()) |trace| {
+                    std.debug.dumpStackTrace(trace.*);
+                }
+            };
+        }
+
+        pub fn start(self: *EventPoolT) !void {
             while (true) {
                 if (!self.client.connected()) break;
 
-                self.client.receiveAndDispatch(self.handler) catch |e| switch (e) {
+                const arena = try self.allocator.create(std.heap.ArenaAllocator);
+                errdefer self.allocator.destroy(arena);
+
+                arena.* = .init(self.allocator);
+                errdefer arena.deinit();
+
+                const event = self.client.receive(arena) catch |e| switch (e) {
                     error.RateLimited,
                     error.TimedOut,
                     error.AuthenticationFailed,
@@ -26,13 +63,17 @@ pub fn EventPool(comptime Handler: type) type {
                     error.UnexpectedClose,
                     => {
                         if (self.client.maybe_reconnect_options) |reconnect_options| {
+                            arena.deinit();
                             try self.client.connectAndLogin(reconnect_options);
+                            continue;
                         } else {
                             return e;
                         }
                     },
                     else => return e,
                 };
+
+                try self.thread_pool.spawn(dispatchThread, .{ self, arena, event });
             }
         }
     };

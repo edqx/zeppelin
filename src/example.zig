@@ -151,12 +151,9 @@ pub fn main() !void {
     var handler: Handler = .{ .client = &client, .own_user = undefined };
     _ = &handler;
 
-    var event_pool: zeppelin.EventPool(Handler) = .{
-        .client = &client,
-        .allocator = allocator,
-        .handler = &handler,
-    };
+    var event_pool: zeppelin.EventPool(Handler) = undefined;
     defer event_pool.deinit();
 
+    try event_pool.init(allocator, &client, &handler);
     try event_pool.start();
 }
