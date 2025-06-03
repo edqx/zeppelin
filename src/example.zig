@@ -22,16 +22,24 @@ const Handler = struct {
 
     pub fn messageCreate(self: *Handler, message_create_event: zeppelin.Event.MessageCreate) !void {
         const allocator = message_create_event.arena;
-        _ = allocator;
-
         const message = message_create_event.message;
 
         if (self.own_user.id == message.author.id) return;
 
         if (!message.meta.queried(.member)) return;
 
-        if (std.mem.eql(u8, message.content, "disconnect")) {
-            try self.client.disconnect();
+        if (std.mem.eql(u8, message.content, "embed")) {
+            var builder: zeppelin.MessageBuilder = .{ .allocator = allocator };
+            defer builder.deinit();
+
+            const embed = try builder.embed();
+
+            try embed.title("Hello!", .{});
+            try embed.description("Hi!", .{});
+
+            embed.timestamp(std.time.milliTimestamp());
+
+            _ = try message.channel.inner.guild_text.createMessage(builder);
         }
     }
 };

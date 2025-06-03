@@ -1,4 +1,6 @@
 const std = @import("std");
+const datetime = @import("datetime").datetime;
+
 const Snowflake = @import("snowflake.zig").Snowflake;
 
 const Color = @import("structures/Message.zig").Color;
@@ -286,7 +288,11 @@ pub const EmbedBuilder = struct {
             try jw.write(self._url);
         }
         if (self._timestamp) |_timestamp| {
-            _ = _timestamp;
+            const dt = datetime.Datetime.fromTimestamp(_timestamp);
+            var iso_buf: [64]u8 = undefined;
+            const iso_str = dt.formatISO8601Buf(&iso_buf, false) catch unreachable;
+            try jw.objectField("timestamp");
+            try jw.write(iso_str);
         }
         if (self._color) |_color| {
             try jw.objectField("color");
@@ -383,6 +389,9 @@ pub fn deinit(self: MessageBuilder) void {
     }
 
     s._content.deinit(s.allocator);
+
+    s._content = .empty;
+    s._embeds = .{};
 }
 
 pub fn contentWriter(self: *MessageBuilder) std.ArrayListUnmanaged(u8).Writer {
