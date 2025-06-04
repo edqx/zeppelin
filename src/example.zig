@@ -28,21 +28,25 @@ const Handler = struct {
 
         if (!message.meta.queried(.member)) return;
 
-        if (std.mem.eql(u8, message.content, "embed")) {
-            var builder: zeppelin.MessageBuilder = .{ .allocator = allocator };
+        if (std.mem.startsWith(u8, message.content, "!!say2 ")) {
+            if (message.content.len < 7) return;
+            var builder: zeppelin.MessageBuilder = try .simple(allocator, "{s}", .{message.content[7..]});
             defer builder.deinit();
-
-            const embed = try builder.embed();
-
-            try embed.title("Hello!", .{});
-            try embed.description("Hi!", .{});
-
-            embed.timestamp(std.time.milliTimestamp());
 
             _ = try message.channel.inner.guild_text.createMessage(builder);
         }
     }
 };
+
+pub fn setup(allocator: std.mem.Allocator, client: *zeppelin.Client) !void {
+    var command: zeppelin.ApplicationCommandBuilder = .init(allocator, .chat_input);
+    defer command.deinit();
+
+    try command.name("ping");
+    try command.description("Ping the bot and get response times in milliseconds", .{});
+
+    try client.bulkOverwriteGlobalApplicationCommands(.from(1227783493967413358), &.{command});
+}
 
 pub fn main() !void {
     var gpa = if (use_gpa) std.heap.GeneralPurposeAllocator(.{}){} else {};
@@ -64,6 +68,8 @@ pub fn main() !void {
     try client.connectAndLogin(.{
         .intents = .all,
     });
+
+    try setup(allocator, &client);
 
     var handler: Handler = .{ .client = &client, .own_user = undefined };
     _ = &handler;

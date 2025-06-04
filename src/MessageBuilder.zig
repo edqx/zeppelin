@@ -217,6 +217,7 @@ pub const EmbedBuilder = struct {
     }
 
     pub fn url(self: *EmbedBuilder, _url: []const u8) !void {
+        self.allocator.free(self._url);
         self._url = try self.allocator.dupe(u8, _url);
     }
 
@@ -233,6 +234,7 @@ pub const EmbedBuilder = struct {
     }
 
     pub fn footerIcon(self: *EmbedBuilder, icon_ref: ImageRef) !void {
+        self._footer_icon_ref.deinit(self.allocator);
         self._footer_icon_ref = try icon_ref.dupe(self.allocator);
     }
 
@@ -242,18 +244,22 @@ pub const EmbedBuilder = struct {
     }
 
     pub fn image(self: *EmbedBuilder, image_ref: ImageRef) !void {
+        self._image_ref.deinit(self.allocator);
         self._image_ref = try image_ref.dupe(self.allocator);
     }
 
     pub fn thumbnail(self: *EmbedBuilder, image_ref: ImageRef) !void {
+        self._thumbnail_ref.deinit(self.allocator);
         self._thumbnail_ref = try image_ref.dupe(self.allocator);
     }
 
     pub fn video(self: *EmbedBuilder, video_url: []const u8) !void {
+        self.allocator.free(self._video_url);
         self._video_url = try self.allocator.dupe(u8, video_url);
     }
 
     pub fn author(self: *EmbedBuilder, name: []const u8, author_url: ?[]const u8, icon_ref: ?ImageRef) !void {
+        self.allocator.free(self._author_name);
         self._author_name = try self.allocator.dupe(u8, name);
         if (author_url) |s| self._author_url = try self.allocator.dupe(u8, s);
         if (icon_ref) |ref| self._author_icon_ref = try ref.dupe(self.allocator);

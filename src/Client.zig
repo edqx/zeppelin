@@ -14,6 +14,7 @@ const Cache = @import("cache.zig").Cache;
 const Pool = @import("cache.zig").Pool;
 
 const MessageBuilder = @import("MessageBuilder.zig");
+const ApplicationCommandBuilder = @import("ApplicationCommandBuilder.zig");
 
 const Rest = @import("Rest.zig");
 
@@ -870,4 +871,24 @@ pub fn createReaction(self: *Client, channel_id: Snowflake, message_id: Snowflak
     });
     defer req.deinit();
     try req.fetch();
+}
+
+pub fn bulkOverwriteGlobalApplicationCommands(self: *Client, application_id: Snowflake, application_command_builder: []const ApplicationCommandBuilder) !void {
+    var req = try self.rest_client.create(.PUT, endpoints.bulk_overwrite_global_application_commands, .{
+        .application_id = application_id,
+    });
+    defer req.deinit();
+
+    var jw = try req.beginJson();
+
+    try jw.beginArray();
+    {
+        for (application_command_builder) |builder| {
+            try jw.write(builder);
+        }
+    }
+    try jw.endArray();
+
+    const application_commands_response = try req.fetchJson(std.json.Value);
+    _ = application_commands_response;
 }

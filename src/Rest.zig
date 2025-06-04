@@ -5,6 +5,37 @@ const Authentication = @import("authentication.zig").Authentication;
 
 const Rest = @This();
 
+pub fn MultiWriter(comptime Writers: type) type {
+    comptime var ErrSet = error{};
+    inline for (@typeInfo(Writers).@"struct".fields) |field| {
+        const StreamType = field.type;
+        ErrSet = ErrSet || StreamType.Error;
+    }
+
+    return struct {
+        const Self = @This();
+
+        streams: Writers,
+
+        pub const Error = ErrSet;
+        pub const Writer = std.io.Writer(Self, Error, write);
+
+        pub fn writer(self: Self) Writer {
+            return .{ .context = self };
+        }
+
+        pub fn write(self: Self, bytes: []const u8) Error!usize {
+            inline for (self.streams) |stream|
+                try stream.writeAll(bytes);
+            return bytes.len;
+        }
+    };
+}
+
+pub fn multiWriter(streams: anytype) MultiWriter(@TypeOf(streams)) {
+    return .{ .streams = streams };
+}
+
 pub const Request = struct {
     arena: std.heap.ArenaAllocator,
     random: std.Random,
@@ -12,6 +43,7 @@ pub const Request = struct {
 
     sent: bool = false,
 
+    // pub const Writer = MultiWriter(struct { std.fs.File.Writer, std.http.Client.Request.Writer }).Writer;
     pub const Writer = std.http.Client.Request.Writer;
     pub const JsonWriter = std.json.WriteStream(Writer, .{ .checked_to_fixed_depth = 256 });
     pub const FormDataWriter = wardrobe.WriteStream(Writer);
@@ -31,6 +63,7 @@ pub const Request = struct {
         try self.http_request.send();
         self.sent = true;
 
+        // return std.json.writeStream(multiWriter(.{ std.io.getStdOut().writer(), self.writer() }).writer(), .{});
         return std.json.writeStream(self.writer(), .{});
     }
 
@@ -47,6 +80,7 @@ pub const Request = struct {
         try self.http_request.send();
         self.sent = true;
 
+        // return wardrobe.writeStream(boundary, multiWriter(.{ std.io.getStdOut().writer(), self.writer() }).writer());
         return wardrobe.writeStream(boundary, self.writer());
     }
 
@@ -64,8 +98,17 @@ pub const Request = struct {
 
     pub fn fetchJson(self: *Request, comptime ResponseData: type) !ResponseData {
         try self.fetch();
-        if (self.status().class() != .success) return error.RequestError;
-        return try self.readJson(ResponseData);
+        switch (self.status().class()) {
+            .success => return try self.readJson(ResponseData),
+            .client_error => {
+                const body = try self.http_request.reader().readAllAlloc(self.arena.allocator(), std.math.maxInt(usize));
+                defer self.arena.allocator().free(body);
+
+                std.log.info("body: {s}", .{body});
+                return error.RequestError;
+            },
+            else => return error.ResponseError,
+        }
     }
 
     pub fn readJson(self: *Request, comptime ResponseData: type) !ResponseData {

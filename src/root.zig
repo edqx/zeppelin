@@ -15,3 +15,5 @@ pub const Permissions = @import("permissions.zig").Permissions;
 
 pub const MessageBuilder = @import("MessageBuilder.zig");
 pub const Mention = MessageBuilder.Mention;
+
+pub const ApplicationCommandBuilder = @import("ApplicationCommandBuilder.zig");
