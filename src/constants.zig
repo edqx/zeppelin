@@ -18,4 +18,6 @@ pub const endpoints = struct {
     pub const create_reaction = api_root ++ "/channels/{[channel_id]}/messages/{[message_id]}/reactions/{[emoji_id]}/@me";
 
     pub const bulk_overwrite_global_application_commands = api_root ++ "/applications/{[application_id]}/commands";
+
+    pub const create_interaction_response = api_root ++ "/interactions/{[interaction_id]}/{[interaction_token]s}/callback";
 };

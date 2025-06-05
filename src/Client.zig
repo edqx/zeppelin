@@ -38,6 +38,7 @@ pub const DispatchType = enum {
     message_create,
     message_delete,
     message_update,
+    interaction_create,
 };
 
 pub const Event = union(DispatchType) {
@@ -89,6 +90,12 @@ pub const Event = union(DispatchType) {
         message: *Message,
     };
 
+    pub const InteractionCreate = struct {
+        arena: std.mem.Allocator,
+        interaction_id: Snowflake,
+        interaction_token: []const u8,
+    };
+
     ready: Ready,
     user_update: UserUpdate,
     guild_create: GuildCreate,
@@ -98,6 +105,7 @@ pub const Event = union(DispatchType) {
     message_create: MessageCreate,
     message_delete: MessageDelete,
     message_update: MessageUpdate,
+    interaction_create: InteractionCreate,
 
     pub const dispatch_id_map: std.StaticStringMap(DispatchType) = .initComptime(.{
         .{ "READY", .ready },
@@ -109,6 +117,7 @@ pub const Event = union(DispatchType) {
         .{ "MESSAGE_CREATE", .message_create },
         .{ "MESSAGE_DELETE", .message_delete },
         .{ "MESSAGE_UPDATE", .message_update },
+        .{ "INTERACTION_CREATE", .interaction_create },
     });
 
     pub fn handlerFunctionName(comptime dispatch_type: DispatchType) []const u8 {
@@ -122,6 +131,7 @@ pub const Event = union(DispatchType) {
             .message_create => "messageCreate",
             .message_delete => "messageDelete",
             .message_update => "messageUpdate",
+            .interaction_create => "interactionCreate",
         };
     }
 
@@ -581,6 +591,15 @@ fn processMessageUpdate(self: *Client, arena: std.mem.Allocator, data: gateway_m
     return .{ .arena = arena, .message = message };
 }
 
+fn processInteractionCreate(self: *Client, arena: std.mem.Allocator, data: gateway_message.payload.InteractionCreate) !Event.InteractionCreate {
+    _ = self;
+    return .{
+        .arena = arena,
+        .interaction_id = try .resolve(data.id),
+        .interaction_token = data.token,
+    };
+}
+
 fn DispatchPayloadType(dispatch_type: DispatchType) type {
     return switch (dispatch_type) {
         .ready => gateway_message.payload.Ready,
@@ -592,6 +611,7 @@ fn DispatchPayloadType(dispatch_type: DispatchType) type {
         .message_create => gateway_message.payload.MessageCreate,
         .message_delete => gateway_message.payload.MessageDelete,
         .message_update => gateway_message.payload.MessageUpdate,
+        .interaction_create => gateway_message.payload.InteractionCreate,
     };
 }
 
@@ -606,6 +626,7 @@ fn dispatchProcessFunctionName(dispatch_type: DispatchType) []const u8 {
         .message_create => "processMessageCreate",
         .message_delete => "processMessageDelete",
         .message_update => "processMessageUpdate",
+        .interaction_create => "processInteractionCreate",
     };
 }
 
@@ -628,6 +649,7 @@ pub fn receive(self: *Client, arena: *std.heap.ArenaAllocator) !Event {
 
         switch (message) {
             .dispatch_event => |dispatch_event| {
+                std.log.info("got event {s}", .{dispatch_event.name});
                 const dispatch_event_type = Event.dispatch_id_map.get(dispatch_event.name) orelse continue;
 
                 switch (dispatch_event_type) {
@@ -850,7 +872,11 @@ pub fn createReaction(self: *Client, channel_id: Snowflake, message_id: Snowflak
     try req.fetch();
 }
 
-pub fn bulkOverwriteGlobalApplicationCommands(self: *Client, application_id: Snowflake, application_command_builder: []const ApplicationCommandBuilder) !void {
+pub fn bulkOverwriteGlobalApplicationCommands(
+    self: *Client,
+    application_id: Snowflake,
+    application_command_builders: []const ApplicationCommandBuilder,
+) !void {
     var req = try self.rest_client.create(.PUT, endpoints.bulk_overwrite_global_application_commands, .{
         .application_id = application_id,
     });
@@ -860,7 +886,7 @@ pub fn bulkOverwriteGlobalApplicationCommands(self: *Client, application_id: Sno
 
     try jw.beginArray();
     {
-        for (application_command_builder) |builder| {
+        for (application_command_builders) |builder| {
             try jw.write(builder);
         }
     }
@@ -868,4 +894,33 @@ pub fn bulkOverwriteGlobalApplicationCommands(self: *Client, application_id: Sno
 
     const application_commands_response = try req.fetchJson(std.json.Value);
     _ = application_commands_response;
+}
+
+pub fn createInteractionResponse(
+    self: *Client,
+    interaction_id: Snowflake,
+    interaction_token: []const u8,
+    message_builder: MessageBuilder,
+) !void {
+    var req = try self.rest_client.create(.POST, endpoints.create_interaction_response ++ "?with_response=true", .{
+        .interaction_id = interaction_id,
+        .interaction_token = interaction_token,
+    });
+    defer req.deinit();
+
+    var jw = try req.beginJson();
+
+    try jw.beginObject();
+    {
+        try jw.objectField("type");
+        try jw.write(4);
+    }
+    {
+        try jw.objectField("data");
+        try jw.write(message_builder);
+    }
+    try jw.endObject();
+
+    const callback_response = try req.fetchJson(std.json.Value);
+    _ = callback_response;
 }

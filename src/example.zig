@@ -36,6 +36,14 @@ const Handler = struct {
             _ = try message.channel.inner.guild_text.createMessage(builder);
         }
     }
+
+    pub fn interactionCreate(self: *Handler, interaction_create_event: zeppelin.Event.InteractionCreate) !void {
+        const allocator = interaction_create_event.arena;
+
+        try self.client.createInteractionResponse(interaction_create_event.interaction_id, interaction_create_event.interaction_token, try .simple(allocator, "Pong!", .{}));
+
+        std.log.info("Interaction created", .{});
+    }
 };
 
 pub fn setup(allocator: std.mem.Allocator, client: *zeppelin.Client) !void {
@@ -69,7 +77,7 @@ pub fn main() !void {
         .intents = .all,
     });
 
-    try setup(allocator, &client);
+    // try setup(allocator, &client);
 
     var handler: Handler = .{ .client = &client, .own_user = undefined };
     _ = &handler;

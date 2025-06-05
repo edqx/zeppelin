@@ -140,6 +140,7 @@ pub const AvatarDecorationData = struct {
 };
 
 pub const Application = std.json.Value; // TODO
+pub const Entitlement = std.json.Value;
 
 pub const User = struct {
     id: Snowflake,
@@ -191,6 +192,10 @@ pub const Guild = struct {
     pub const Unavailable = struct {
         id: []const u8,
         unavailable: bool,
+    };
+
+    pub const Partial = struct {
+        id: []const u8,
     };
 
     pub const Member = struct {
@@ -395,6 +400,7 @@ pub const Embed = struct {
     author: Elective(Author) = .not_given,
     fields: Elective([]Field) = .not_given,
 }; // TODO
+
 pub const Reaction = struct {
     pub const Default = struct {
         emoji_id: ?Snowflake,
@@ -465,6 +471,29 @@ pub const Message = struct {
     resolved: Elective(Resolved) = .not_given,
     poll: Elective(Poll) = .not_given,
     call: Elective(Call) = .not_given,
+};
+
+pub const Interaction = struct {
+    id: Snowflake,
+    application_id: Snowflake,
+    type: i32,
+    data: Elective(std.json.Value) = .not_given,
+    guild: Elective(Guild.Partial) = .not_given,
+    guild_id: Elective(Snowflake) = .not_given,
+    channel: Elective(Channel) = .not_given,
+    channel_id: Elective(Snowflake) = .not_given,
+    member: Elective(Guild.Member) = .not_given,
+    user: Elective(Guild.Member) = .not_given,
+    token: []const u8,
+    version: i32,
+    message: Elective(Message) = .not_given,
+    app_permissions: []const u8,
+    locale: Elective([]const u8) = .not_given,
+    guild_locale: Elective([]const u8) = .not_given,
+    entitlements: []Entitlement,
+    authorizing_integration_owners: std.json.Value, // todo: what is this field? https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-object-interaction-structure
+    context: Elective(i32) = .not_given,
+    attachment_size_limit: i32,
 };
 
 pub const payload = struct {
@@ -655,4 +684,6 @@ pub const payload = struct {
     };
 
     pub const MessageUpdate = MessageCreate;
+
+    pub const InteractionCreate = Interaction;
 };
