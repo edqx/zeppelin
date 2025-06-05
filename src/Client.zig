@@ -99,32 +99,43 @@ pub const Event = union(DispatchType) {
     message_delete: MessageDelete,
     message_update: MessageUpdate,
 
+    pub const dispatch_id_map: std.StaticStringMap(DispatchType) = .initComptime(.{
+        .{ "READY", .ready },
+        .{ "USER_UPDATE", .user_update },
+        .{ "GUILD_CREATE", .guild_create },
+        .{ "GUILD_MEMBER_ADD", .guild_member_add },
+        .{ "GUILD_MEMBER_REMOVE", .guild_member_remove },
+        .{ "GUILD_MEMBER_UPDATE", .guild_member_update },
+        .{ "MESSAGE_CREATE", .message_create },
+        .{ "MESSAGE_DELETE", .message_delete },
+        .{ "MESSAGE_UPDATE", .message_update },
+    });
+
+    pub fn handlerFunctionName(comptime dispatch_type: DispatchType) []const u8 {
+        return switch (dispatch_type) {
+            .ready => "ready",
+            .user_update => "userUpdate",
+            .guild_create => "guildCreate",
+            .guild_member_add => "guildMemberAdd",
+            .guild_member_remove => "guildMemberRemove",
+            .guild_member_update => "guildMemberUpdate",
+            .message_create => "messageCreate",
+            .message_delete => "messageDelete",
+            .message_update => "messageUpdate",
+        };
+    }
+
     pub fn dispatch(event: Event, handler: anytype) !void {
         switch (event) {
-            .ready => |ev| if (@hasDecl(@TypeOf(handler.*), "ready")) try handler.ready(ev),
-            .user_update => |ev| if (@hasDecl(@TypeOf(handler.*), "userUpdate")) try handler.userUpdate(ev),
-            .guild_create => |ev| if (@hasDecl(@TypeOf(handler.*), "guildCreate")) try handler.guildCreate(ev),
-            .guild_member_add => |ev| if (@hasDecl(@TypeOf(handler.*), "guildMemberAdd")) try handler.guildMemberAdd(ev),
-            .guild_member_remove => |ev| if (@hasDecl(@TypeOf(handler.*), "guildMemberRemove")) try handler.guildMemberRemove(ev),
-            .guild_member_update => |ev| if (@hasDecl(@TypeOf(handler.*), "guildMemberUpdate")) try handler.guildMemberUpdate(ev),
-            .message_create => |ev| if (@hasDecl(@TypeOf(handler.*), "messageCreate")) try handler.messageCreate(ev),
-            .message_delete => |ev| if (@hasDecl(@TypeOf(handler.*), "messageDelete")) try handler.messageDelete(ev),
-            .message_update => |ev| if (@hasDecl(@TypeOf(handler.*), "messageUpdate")) try handler.messageUpdate(ev),
+            inline else => |ev, tag| {
+                const handlerName = comptime handlerFunctionName(tag);
+                if (@hasDecl(@TypeOf(handler.*), handlerName)) {
+                    try @field(@TypeOf(handler.*), handlerName)(handler, ev);
+                }
+            },
         }
     }
 };
-
-pub const dispatch_event_map: std.StaticStringMap(DispatchType) = .initComptime(.{
-    .{ "READY", .ready },
-    .{ "USER_UPDATE", .user_update },
-    .{ "GUILD_CREATE", .guild_create },
-    .{ "GUILD_MEMBER_ADD", .guild_member_add },
-    .{ "GUILD_MEMBER_REMOVE", .guild_member_remove },
-    .{ "GUILD_MEMBER_UPDATE", .guild_member_update },
-    .{ "MESSAGE_CREATE", .message_create },
-    .{ "MESSAGE_DELETE", .message_delete },
-    .{ "MESSAGE_UPDATE", .message_update },
-});
 
 pub const ChannelManager = struct {
     client: *Client,
@@ -414,23 +425,16 @@ fn clearReconnect(self: *Client) void {
     self.maybe_reconnect_options = null;
 }
 
-fn processReadyEvent(self: *Client, arena: std.mem.Allocator, json: std.json.Value) !Event.Ready {
-    const ready_data = try std.json.parseFromValueLeaky(
-        gateway_message.payload.Ready,
-        arena,
-        json,
-        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
-    );
-
+fn processReadyEvent(self: *Client, arena: std.mem.Allocator, data: gateway_message.payload.Ready) !Event.Ready {
     const user = try self.users.cache.patch(
         self,
-        try .resolve(ready_data.user.id),
-        ready_data.user,
+        try .resolve(data.user.id),
+        data.user,
     );
 
-    const session_id = try self.allocator.dupe(u8, ready_data.session_id);
+    const session_id = try self.allocator.dupe(u8, data.session_id);
     errdefer self.allocator.free(session_id);
-    const resume_gateway_url = try self.allocator.dupe(u8, ready_data.resume_gateway_url);
+    const resume_gateway_url = try self.allocator.dupe(u8, data.resume_gateway_url);
     errdefer self.allocator.free(resume_gateway_url);
 
     self.maybe_reconnect_options = self.maybe_gateway_client.?.options;
@@ -440,32 +444,18 @@ fn processReadyEvent(self: *Client, arena: std.mem.Allocator, json: std.json.Val
     return .{ .arena = arena, .user = user };
 }
 
-fn processUserUpdate(self: *Client, arena: std.mem.Allocator, json: std.json.Value) !Event.UserUpdate {
-    const user_update_data = try std.json.parseFromValueLeaky(
-        gateway_message.payload.UserUpdate,
-        arena,
-        json,
-        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
-    );
-
+fn processUserUpdate(self: *Client, arena: std.mem.Allocator, data: gateway_message.payload.UserUpdate) !Event.UserUpdate {
     const user = try self.users.cache.patch(
         self,
-        try .resolve(user_update_data.id),
-        user_update_data,
+        try .resolve(data.id),
+        data,
     );
 
     return .{ .arena = arena, .user = user };
 }
 
-fn processGuildCreate(self: *Client, arena: std.mem.Allocator, json: std.json.Value) !Event.GuildCreate {
-    const guild_data = try std.json.parseFromValueLeaky(
-        gateway_message.payload.GuildCreate,
-        arena,
-        json,
-        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
-    );
-
-    const guild = switch (guild_data) {
+fn processGuildCreate(self: *Client, arena: std.mem.Allocator, data: gateway_message.payload.GuildCreate) !Event.GuildCreate {
+    const guild = switch (data) {
         .available => |available_data| try self.guilds.cache.patch(
             self,
             try .resolve(available_data.inner_guild.id),
@@ -486,19 +476,12 @@ fn processGuildCreate(self: *Client, arena: std.mem.Allocator, json: std.json.Va
     return .{ .arena = arena, .guild = guild };
 }
 
-fn processGuildMemberAdd(self: *Client, arena: std.mem.Allocator, json: std.json.Value) !Event.GuildMemberAdd {
+fn processGuildMemberAdd(self: *Client, arena: std.mem.Allocator, data: gateway_message.payload.GuildMemberAdd) !Event.GuildMemberAdd {
     const users_cache = &self.users.cache;
     const guilds_cache = &self.guilds.cache;
 
-    const guild_member_add_data = try std.json.parseFromValueLeaky(
-        gateway_message.payload.GuildMemberAdd,
-        arena,
-        json,
-        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
-    );
-
-    const guild_id = guild_member_add_data.extra.guild_id;
-    const guild_member_data = guild_member_add_data.inner_guild_member;
+    const guild_id = data.extra.guild_id;
+    const guild_member_data = data.inner_guild_member;
 
     switch (guild_member_data.user) {
         .not_given => {
@@ -516,68 +499,45 @@ fn processGuildMemberAdd(self: *Client, arena: std.mem.Allocator, json: std.json
     unreachable;
 }
 
-fn processGuildMemberRemove(self: *Client, arena: std.mem.Allocator, json: std.json.Value) !Event.GuildMemberRemove {
+fn processGuildMemberRemove(self: *Client, arena: std.mem.Allocator, data: gateway_message.payload.GuildMemberRemove) !Event.GuildMemberRemove {
     const users_cache = &self.users.cache;
     const guilds_cache = &self.guilds.cache;
 
-    const guild_member_remove_data = try std.json.parseFromValueLeaky(
-        gateway_message.payload.GuildMemberRemove,
-        arena,
-        json,
-        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
-    );
+    const guild = try guilds_cache.touch(self, try .resolve(data.guild_id));
 
-    const user_data = guild_member_remove_data.user;
-
-    const guild = try guilds_cache.touch(self, try .resolve(guild_member_remove_data.guild_id));
-
-    const user = try users_cache.patch(self, try .resolve(user_data.id), user_data);
-    const guild_member = try guild.members.cache.touch(guild, try .resolve(user_data.id));
-    guild.members.pool.remove(try .resolve(user_data.id));
+    const user = try users_cache.patch(self, try .resolve(data.user.id), data.user);
+    const guild_member = try guild.members.cache.touch(guild, try .resolve(data.user.id));
+    guild.members.pool.remove(try .resolve(data.user.id));
     guild_member.meta.patch(.user, user);
 
     return .{ .arena = arena, .guild = guild, .guild_member = guild_member };
 }
 
-pub fn processGuildMemberUpdate(self: *Client, arena: std.mem.Allocator, json: std.json.Value) !Event.GuildMemberUpdate {
-    const guild_member_update_data = try std.json.parseFromValueLeaky(
-        gateway_message.payload.GuildMemberUpdate,
-        arena,
-        json,
-        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
-    );
-
-    const user = try self.users.cache.patch(self, try .resolve(guild_member_update_data.user.id), guild_member_update_data.user);
-    const guild = try self.guilds.cache.touch(self, try .resolve(guild_member_update_data.guild_id));
+pub fn processGuildMemberUpdate(self: *Client, arena: std.mem.Allocator, data: gateway_message.payload.GuildMemberUpdate) !Event.GuildMemberUpdate {
+    const user = try self.users.cache.patch(self, try .resolve(data.user.id), data.user);
+    const guild = try self.guilds.cache.touch(self, try .resolve(data.guild_id));
 
     const guild_member = try guild.members.cache.touch(guild, user.id);
-    try guild_member.patchUpdate(guild_member_update_data);
+    try guild_member.patchUpdate(data);
 
     return .{ .arena = arena, .guild = guild, .guild_member = guild_member };
 }
 
-fn processMessageCreate(self: *Client, arena: std.mem.Allocator, json: std.json.Value) !Event.MessageCreate {
-    const message_data = try std.json.parseFromValueLeaky(
-        gateway_message.payload.MessageCreate,
-        arena,
-        json,
-        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
-    );
-
+fn processMessageCreate(self: *Client, arena: std.mem.Allocator, data: gateway_message.payload.MessageCreate) !Event.MessageCreate {
     const message = try self.messages.cache.patch(
         self,
-        try .resolve(message_data.inner_message.id),
+        try .resolve(data.inner_message.id),
         .{
-            .base = message_data.inner_message,
-            .guild_id = switch (message_data.extra.guild_id) {
+            .base = data.inner_message,
+            .guild_id = switch (data.extra.guild_id) {
                 .not_given => null,
                 .val => |guild_id| guild_id,
             },
-            .member = switch (message_data.extra.member) {
+            .member = switch (data.extra.member) {
                 .not_given => null,
                 .val => |member| member,
             },
-            .mentions = message_data.extra.mentions,
+            .mentions = data.extra.mentions,
         },
     );
     try self.messages.pool.add(message);
@@ -585,54 +545,68 @@ fn processMessageCreate(self: *Client, arena: std.mem.Allocator, json: std.json.
     return .{ .arena = arena, .message = message };
 }
 
-fn processMessageDelete(self: *Client, arena: std.mem.Allocator, json: std.json.Value) !Event.MessageDelete {
-    const delete_data = try std.json.parseFromValueLeaky(
-        gateway_message.payload.MessageDelete,
-        arena,
-        json,
-        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
-    );
-
-    const message = try self.messages.cache.touch(self, try .resolve(delete_data.id));
-    const channel = try self.channels.cache.touch(self, try .resolve(delete_data.channel_id));
+fn processMessageDelete(self: *Client, arena: std.mem.Allocator, data: gateway_message.payload.MessageDelete) !Event.MessageDelete {
+    const message = try self.messages.cache.touch(self, try .resolve(data.id));
+    const channel = try self.channels.cache.touch(self, try .resolve(data.channel_id));
 
     message.meta.patch(.channel, channel);
-    switch (delete_data.guild_id) {
+    switch (data.guild_id) {
         .not_given => {},
         .val => |guild_id| message.meta.patch(.guild, try self.guilds.cache.touch(self, try .resolve(guild_id))),
     }
-    self.messages.pool.remove(try .resolve(delete_data.id));
+    self.messages.pool.remove(try .resolve(data.id));
 
     return .{ .arena = arena, .message = message };
 }
 
-fn processMessageUpdate(self: *Client, arena: std.mem.Allocator, json: std.json.Value) !Event.MessageUpdate {
-    const update_data = try std.json.parseFromValueLeaky(
-        gateway_message.payload.MessageUpdate,
-        arena,
-        json,
-        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
-    );
-
+fn processMessageUpdate(self: *Client, arena: std.mem.Allocator, data: gateway_message.payload.MessageUpdate) !Event.MessageUpdate {
     const message = try self.messages.cache.patch(
         self,
-        try .resolve(update_data.inner_message.id),
+        try .resolve(data.inner_message.id),
         .{
-            .base = update_data.inner_message,
-            .guild_id = switch (update_data.extra.guild_id) {
+            .base = data.inner_message,
+            .guild_id = switch (data.extra.guild_id) {
                 .not_given => null,
                 .val => |guild_id| guild_id,
             },
-            .member = switch (update_data.extra.member) {
+            .member = switch (data.extra.member) {
                 .not_given => null,
                 .val => |member| member,
             },
-            .mentions = update_data.extra.mentions,
+            .mentions = data.extra.mentions,
         },
     );
     try self.messages.pool.add(message);
 
     return .{ .arena = arena, .message = message };
+}
+
+fn DispatchPayloadType(dispatch_type: DispatchType) type {
+    return switch (dispatch_type) {
+        .ready => gateway_message.payload.Ready,
+        .user_update => gateway_message.payload.UserUpdate,
+        .guild_create => gateway_message.payload.GuildCreate,
+        .guild_member_add => gateway_message.payload.GuildMemberAdd,
+        .guild_member_remove => gateway_message.payload.GuildMemberRemove,
+        .guild_member_update => gateway_message.payload.GuildMemberUpdate,
+        .message_create => gateway_message.payload.MessageCreate,
+        .message_delete => gateway_message.payload.MessageDelete,
+        .message_update => gateway_message.payload.MessageUpdate,
+    };
+}
+
+fn dispatchProcessFunctionName(dispatch_type: DispatchType) []const u8 {
+    return switch (dispatch_type) {
+        .ready => "processReadyEvent",
+        .user_update => "processUserUpdate",
+        .guild_create => "processGuildCreate",
+        .guild_member_add => "processGuildMemberAdd",
+        .guild_member_remove => "processGuildMemberRemove",
+        .guild_member_update => "processGuildMemberUpdate",
+        .message_create => "processMessageCreate",
+        .message_delete => "processMessageDelete",
+        .message_update => "processMessageUpdate",
+    };
 }
 
 pub fn receive(self: *Client, arena: *std.heap.ArenaAllocator) !Event {
@@ -654,18 +628,21 @@ pub fn receive(self: *Client, arena: *std.heap.ArenaAllocator) !Event {
 
         switch (message) {
             .dispatch_event => |dispatch_event| {
-                const dispatch_event_type = dispatch_event_map.get(dispatch_event.name) orelse continue;
+                const dispatch_event_type = Event.dispatch_id_map.get(dispatch_event.name) orelse continue;
 
                 switch (dispatch_event_type) {
-                    .ready => return .{ .ready = try self.processReadyEvent(allocator, dispatch_event.data_json) },
-                    .user_update => return .{ .user_update = try self.processUserUpdate(allocator, dispatch_event.data_json) },
-                    .guild_create => return .{ .guild_create = try self.processGuildCreate(allocator, dispatch_event.data_json) },
-                    .guild_member_add => return .{ .guild_member_add = try self.processGuildMemberAdd(allocator, dispatch_event.data_json) },
-                    .guild_member_remove => return .{ .guild_member_remove = try self.processGuildMemberRemove(allocator, dispatch_event.data_json) },
-                    .guild_member_update => return .{ .guild_member_update = try self.processGuildMemberUpdate(allocator, dispatch_event.data_json) },
-                    .message_create => return .{ .message_create = try self.processMessageCreate(allocator, dispatch_event.data_json) },
-                    .message_delete => return .{ .message_delete = try self.processMessageDelete(allocator, dispatch_event.data_json) },
-                    .message_update => return .{ .message_update = try self.processMessageUpdate(allocator, dispatch_event.data_json) },
+                    inline else => |tag| {
+                        const data = try std.json.parseFromValueLeaky(
+                            DispatchPayloadType(tag),
+                            arena.allocator(),
+                            dispatch_event.data_json,
+                            .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
+                        );
+
+                        const dispatch_fn = @field(Client, dispatchProcessFunctionName(tag));
+
+                        return @unionInit(Event, @tagName(tag), try dispatch_fn(self, allocator, data));
+                    },
                 }
             },
             .reconnect => {
