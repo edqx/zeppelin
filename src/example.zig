@@ -29,9 +29,9 @@ const Handler = struct {
         if (!message.meta.queried(.member)) return;
 
         if (std.mem.startsWith(u8, message.content, "!!type")) {
-            try message.channel.inner.guild_text.triggerTypingIndicator();
+            try message.channel.anyText().triggerTypingIndicator();
             std.Thread.sleep(std.time.ns_per_s * 5);
-            _ = try message.channel.inner.guild_text.createMessage(try .simple(allocator, "ok, typed this message", .{}));
+            _ = try message.channel.anyText().createMessage(try .simple(allocator, "ok, typed this message", .{}));
         }
     }
 
