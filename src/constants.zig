@@ -9,6 +9,7 @@ pub const endpoints = struct {
     pub const get_channel = api_root ++ "/channels/{[channel_id]}";
     pub const get_channel_message = api_root ++ "/channels/{[channel_id]}/messages/{[message_id]}";
 
+    pub const trigger_typing_indicator = api_root ++ "/channels/{[channel_id]}/typing";
     pub const create_message = api_root ++ "/channels/{[channel_id]}/messages";
     pub const delete_message = api_root ++ "/channels/{[channel_id]}/messages/{[message_id]}";
 

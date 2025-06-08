@@ -151,6 +151,11 @@ pub fn AnyChannel(comptime channel_type: Type, comptime used_fields: []const [:0
             return try self.context.createMessage(self.id, message_builder);
         }
 
+        pub fn triggerTypingIndicator(self: *AnyChannelT) !void {
+            comptime if (!channel_type.messageable()) @compileError("Cannot trigger typing indicator in " ++ @tagName(channel_type) ++ " channels");
+            try self.context.triggerTypingIndicator(self.id);
+        }
+
         pub fn roleOverwrite(self: *AnyChannelT, role_id: Snowflake) ?Permissions.Overwrite {
             return for (self.permission_overwrites) |overwrite| {
                 if (overwrite.type == .role and overwrite.id == role_id) break overwrite;

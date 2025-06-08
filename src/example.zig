@@ -28,12 +28,10 @@ const Handler = struct {
 
         if (!message.meta.queried(.member)) return;
 
-        if (std.mem.startsWith(u8, message.content, "!!say2 ")) {
-            if (message.content.len < 7) return;
-            var builder: zeppelin.MessageBuilder = try .simple(allocator, "{s}", .{message.content[7..]});
-            defer builder.deinit();
-
-            _ = try message.channel.inner.guild_text.createMessage(builder);
+        if (std.mem.startsWith(u8, message.content, "!!type")) {
+            try message.channel.inner.guild_text.triggerTypingIndicator();
+            std.Thread.sleep(std.time.ns_per_s * 5);
+            _ = try message.channel.inner.guild_text.createMessage(try .simple(allocator, "ok, typed this message", .{}));
         }
     }
 

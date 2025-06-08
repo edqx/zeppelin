@@ -847,6 +847,14 @@ pub fn deleteChannel(self: *Client, channel_id: Snowflake) !void {
     try req.fetch();
 }
 
+pub fn triggerTypingIndicator(self: *Client, channel_id: Snowflake) !void {
+    var req = try self.rest_client.create(.POST, endpoints.trigger_typing_indicator, .{
+        .channel_id = channel_id,
+    });
+    defer req.deinit();
+    try req.fetch();
+}
+
 pub const ReactionAdd = union(enum) {
     unicode: []const u8,
     custom: struct {
