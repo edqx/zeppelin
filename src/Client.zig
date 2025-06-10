@@ -667,9 +667,8 @@ pub fn receive(self: *Client, arena: *std.heap.ArenaAllocator) !Event {
                 }
             },
             .reconnect => {
-                const reconnect_options = self.maybe_gateway_client.?.options;
+                self.maybe_reconnect_options = self.maybe_gateway_client.?.options;
                 try self.disconnect();
-                try self.connectAndLogin(reconnect_options);
             },
             .hello, .invalid_session => {
                 // TODO: handle
