@@ -649,7 +649,6 @@ pub fn receive(self: *Client, arena: *std.heap.ArenaAllocator) !Event {
 
         switch (message) {
             .dispatch_event => |dispatch_event| {
-                std.log.info("got event {s}", .{dispatch_event.name});
                 const dispatch_event_type = Event.dispatch_id_map.get(dispatch_event.name) orelse continue;
 
                 switch (dispatch_event_type) {
