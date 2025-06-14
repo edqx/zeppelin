@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const log = @import("log.zig").zeppelin;
+
 const Client = @import("Client.zig");
 
 pub fn EventPool(comptime Handler: type) type {
@@ -57,6 +59,7 @@ pub fn EventPool(comptime Handler: type) type {
 
                 const event = self.client.receive(arena) catch |e| switch (e) {
                     error.Disconnected => {
+                        log.info("Got disconnect, not resuming", .{});
                         arena.deinit();
                         self.allocator.destroy(arena);
                         return;
@@ -68,11 +71,13 @@ pub fn EventPool(comptime Handler: type) type {
                     error.UnexpectedClose,
                     => {
                         if (self.client.maybe_reconnect_options) |reconnect_options| {
+                            log.info("Got close, but we will reconnect and resume ({})", .{e});
                             arena.deinit();
                             self.allocator.destroy(arena);
                             try self.client.connectAndLogin(reconnect_options);
                             continue;
                         } else {
+                            log.info("Got close, no resume possible ({})", .{e});
                             return e;
                         }
                     },

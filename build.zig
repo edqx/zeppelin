@@ -1,6 +1,11 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
+    const logging = b.option(bool, "logging", "Whether the library should emit information through logging") orelse false;
+
+    const build_options = b.addOptions();
+    build_options.addOption(bool, "logging", logging);
+
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -13,6 +18,8 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+
+    mod.addOptions("build_options", build_options);
 
     mod.addImport("websocket", websocket_dep.module("websocket"));
     mod.addImport("wardrobe", wardrobe_dep.module("wardrobe"));

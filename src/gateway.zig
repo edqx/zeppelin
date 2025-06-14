@@ -2,9 +2,9 @@ const std = @import("std");
 const builtin = @import("builtin");
 const websocket = @import("websocket");
 
-const gateway_message = @import("gateway_message.zig");
+const log = @import("log.zig").zeppelin;
 
-const log = std.log.scoped(.zeppelin_gateway);
+const gateway_message = @import("gateway_message.zig");
 
 pub const State = enum {
     established,
@@ -192,6 +192,8 @@ pub fn Client(config: Config) type {
                 .zstd => "&compress=zstd-stream",
             };
 
+            log.info("Gateway connecting at wss://{s}{s}", .{ options.host, path });
+
             try websocket_client.handshake(path, .{
                 .timeout_ms = 5000,
                 .headers = headers,
@@ -356,12 +358,14 @@ pub fn Client(config: Config) type {
                                         .ignore_unknown_fields = true,
                                     },
                                 );
+                                log.debug("Got hello, heartbeat interval: {}", .{hello_payload.heartbeat_interval});
                                 return .{ .hello = .{
                                     .heartbeat_interval = @intCast(hello_payload.heartbeat_interval),
                                 } };
                             },
                             .heartbeat_acknowledge => {
                                 self.was_last_heartbeat_acknowledged = true;
+                                log.debug("Last heartbeat was acknowledged", .{});
                             },
                         }
                     },
@@ -434,7 +438,9 @@ pub fn Client(config: Config) type {
 
             while (true) {
                 defer wait_ms = interval;
+                log.debug("Sending heartbeat in {}ms", .{wait_ms});
                 if (self.heartbeat_reset.timedWait(@intCast(std.time.ns_per_ms * wait_ms))) {
+                    log.warn("Heartbeats disconnected", .{});
                     break; // no more heartbeats, gateway disconnected
                 } else |e| {
                     switch (e) {

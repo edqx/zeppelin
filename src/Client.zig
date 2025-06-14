@@ -2,6 +2,8 @@ const std = @import("std");
 const websocket = @import("websocket");
 const wardrobe = @import("wardrobe");
 
+const log = @import("log.zig").zeppelin;
+
 const gateway = @import("gateway.zig");
 const gateway_message = @import("gateway_message.zig");
 const endpoints = @import("constants.zig").endpoints;
@@ -397,6 +399,8 @@ pub fn connected(self: *Client) bool {
 pub fn disconnect(self: *Client) !void {
     var gateway_client: *StandardGatewayClient = &(self.maybe_gateway_client orelse return error.NotConnected);
 
+    log.info("Disconnect requested", .{});
+
     self.clearReconnect();
     try gateway_client.disconnect();
 }
@@ -441,6 +445,8 @@ fn processReadyEvent(self: *Client, arena: std.mem.Allocator, data: gateway_mess
         try .resolve(data.user.id),
         data.user,
     );
+
+    log.info("User received, logged in as '{s}#{s}'", .{ user.username, user.discriminator });
 
     const session_id = try self.allocator.dupe(u8, data.session_id);
     errdefer self.allocator.free(session_id);
@@ -649,6 +655,8 @@ pub fn receive(self: *Client, arena: *std.heap.ArenaAllocator) !Event {
 
         switch (message) {
             .dispatch_event => |dispatch_event| {
+                log.info("Got event {s}", .{dispatch_event.name});
+
                 const dispatch_event_type = Event.dispatch_id_map.get(dispatch_event.name) orelse continue;
 
                 switch (dispatch_event_type) {
@@ -675,6 +683,8 @@ pub fn receive(self: *Client, arena: *std.heap.ArenaAllocator) !Event {
             },
             .close => |maybe_close_opcode| {
                 if (maybe_close_opcode) |close_opcode| {
+                    log.info("Got close {}, can reconnect? {}", .{ close_opcode, close_opcode.reconnect() });
+
                     if (!close_opcode.reconnect()) {
                         self.clearReconnect();
                     }
@@ -701,6 +711,7 @@ pub fn receive(self: *Client, arena: *std.heap.ArenaAllocator) !Event {
                         => return error.UnexpectedClose,
                     }
                 } else {
+                    log.info("Got unexpected close without a reason", .{});
                     // self.clearReconnect(); // let's try to reconnect if the socket closes 'normally'
                     return error.UnexpectedClose;
                 }

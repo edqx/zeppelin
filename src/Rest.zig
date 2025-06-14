@@ -1,6 +1,8 @@
 const std = @import("std");
 const wardrobe = @import("wardrobe");
 
+const log = @import("log.zig").zeppelin;
+
 const Authentication = @import("authentication.zig").Authentication;
 
 const Rest = @This();
@@ -58,6 +60,8 @@ pub const Request = struct {
     }
 
     pub fn beginJson(self: *Request) !JsonWriter {
+        log.debug("- Started JSON request body", .{});
+
         self.http_request.headers.content_type = .{ .override = "application/json" };
 
         try self.http_request.send();
@@ -69,6 +73,8 @@ pub const Request = struct {
 
     pub fn beginFormData(self: *Request) !FormDataWriter {
         const allocator = self.arena.allocator();
+
+        log.debug("- Started form data request body", .{});
 
         const boundary: wardrobe.Boundary = .entropy("ZeppelinBoundary", self.random);
 
@@ -88,8 +94,12 @@ pub const Request = struct {
         if (!self.sent) try self.http_request.send();
         self.sent = true;
 
+        log.debug("- Request finished", .{});
+
         try self.http_request.finish();
         try self.http_request.wait();
+
+        log.debug("- Response received, code: {s} {s} ({})", .{ @tagName(self.status().class()), @tagName(self.status()), @intFromEnum(self.status()) });
     }
 
     pub fn status(self: *Request) std.http.Status {
@@ -104,7 +114,7 @@ pub const Request = struct {
                 const body = try self.http_request.reader().readAllAlloc(self.arena.allocator(), std.math.maxInt(usize));
                 defer self.arena.allocator().free(body);
 
-                std.log.info("body: {s}", .{body});
+                log.err("Request error: {s}", .{body});
                 return error.RequestError;
             },
             else => return error.ResponseError,
@@ -173,6 +183,8 @@ pub fn create(
     errdefer allocator.free(authorization_header);
 
     req.headers.authorization = .{ .override = authorization_header };
+
+    log.info("Request: {s} @ {s}", .{ @tagName(method), formatted_uri });
 
     return .{
         .arena = arena,
