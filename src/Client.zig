@@ -453,7 +453,7 @@ fn processReadyEvent(self: *Client, arena: std.mem.Allocator, data: gateway_mess
     const resume_gateway_url = try self.allocator.dupe(u8, data.resume_gateway_url);
     errdefer self.allocator.free(resume_gateway_url);
 
-    self.maybe_reconnect_options = self.maybe_gateway_client.?.options;
+    self.maybe_reconnect_options = try self.maybe_gateway_client.?.options.dupe(self.allocator);
     self.maybe_reconnect_options.?.session_id = session_id;
     self.maybe_reconnect_options.?.host = resume_gateway_url;
 
@@ -636,6 +636,75 @@ fn dispatchProcessFunctionName(dispatch_type: DispatchType) []const u8 {
     };
 }
 
+pub fn processGatewayMessage(self: *Client, allocator: std.mem.Allocator, message: gateway.MessageRead) !?Event {
+    switch (message) {
+        .dispatch_event => |dispatch_event| {
+            log.info("Got event {s}", .{dispatch_event.name});
+
+            const dispatch_event_type = Event.dispatch_id_map.get(dispatch_event.name) orelse return null;
+
+            switch (dispatch_event_type) {
+                inline else => |tag| {
+                    const data = try std.json.parseFromValueLeaky(
+                        DispatchPayloadType(tag),
+                        allocator,
+                        dispatch_event.data_json,
+                        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
+                    );
+
+                    const dispatch_fn = @field(Client, dispatchProcessFunctionName(tag));
+
+                    return @unionInit(Event, @tagName(tag), try dispatch_fn(self, allocator, data));
+                },
+            }
+        },
+        .reconnect => {
+            log.info("Server requested reconnect", .{});
+            // self.maybe_reconnect_options = try self.maybe_gateway_client.?.options.dupe(self.allocator);
+            try self.disconnect();
+        },
+        .hello, .invalid_session => {
+            // TODO: handle
+        },
+        .close => |maybe_close_opcode| {
+            if (maybe_close_opcode) |close_opcode| {
+                log.info("Got close {}, can reconnect? {}", .{ close_opcode, close_opcode.reconnect() });
+
+                if (!close_opcode.reconnect()) {
+                    self.clearReconnect();
+                }
+
+                try self.disconnect();
+
+                switch (close_opcode) {
+                    .rate_limited => return error.RateLimited,
+                    .session_timed_out => return error.TimedOut,
+                    .not_authenticated,
+                    .authentication_failed,
+                    .already_authenticated,
+                    => return error.AuthenticationFailed,
+                    .invalid_intents,
+                    .disallowed_intents,
+                    => return error.BadIntents,
+                    .unknown_error,
+                    .unknown_opcode,
+                    .decode_error,
+                    .invalid_sequence,
+                    .invalid_shard,
+                    .sharding_required,
+                    .invalid_api_version,
+                    => return error.UnexpectedClose,
+                }
+            } else {
+                log.info("Got unexpected close without a reason", .{});
+                // self.clearReconnect(); // let's try to reconnect if the socket closes 'normally'
+                return error.UnexpectedClose;
+            }
+        },
+    }
+    return null;
+}
+
 pub fn receive(self: *Client, arena: *std.heap.ArenaAllocator) !Event {
     const gateway_client: *StandardGatewayClient = &(self.maybe_gateway_client orelse return error.NotConnected);
 
@@ -653,69 +722,8 @@ pub fn receive(self: *Client, arena: *std.heap.ArenaAllocator) !Event {
             else => return e,
         };
 
-        switch (message) {
-            .dispatch_event => |dispatch_event| {
-                log.info("Got event {s}", .{dispatch_event.name});
-
-                const dispatch_event_type = Event.dispatch_id_map.get(dispatch_event.name) orelse continue;
-
-                switch (dispatch_event_type) {
-                    inline else => |tag| {
-                        const data = try std.json.parseFromValueLeaky(
-                            DispatchPayloadType(tag),
-                            arena.allocator(),
-                            dispatch_event.data_json,
-                            .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
-                        );
-
-                        const dispatch_fn = @field(Client, dispatchProcessFunctionName(tag));
-
-                        return @unionInit(Event, @tagName(tag), try dispatch_fn(self, allocator, data));
-                    },
-                }
-            },
-            .reconnect => {
-                self.maybe_reconnect_options = self.maybe_gateway_client.?.options;
-                try self.disconnect();
-            },
-            .hello, .invalid_session => {
-                // TODO: handle
-            },
-            .close => |maybe_close_opcode| {
-                if (maybe_close_opcode) |close_opcode| {
-                    log.info("Got close {}, can reconnect? {}", .{ close_opcode, close_opcode.reconnect() });
-
-                    if (!close_opcode.reconnect()) {
-                        self.clearReconnect();
-                    }
-
-                    try self.disconnect();
-
-                    switch (close_opcode) {
-                        .rate_limited => return error.RateLimited,
-                        .session_timed_out => return error.TimedOut,
-                        .not_authenticated,
-                        .authentication_failed,
-                        .already_authenticated,
-                        => return error.AuthenticationFailed,
-                        .invalid_intents,
-                        .disallowed_intents,
-                        => return error.BadIntents,
-                        .unknown_error,
-                        .unknown_opcode,
-                        .decode_error,
-                        .invalid_sequence,
-                        .invalid_shard,
-                        .sharding_required,
-                        .invalid_api_version,
-                        => return error.UnexpectedClose,
-                    }
-                } else {
-                    log.info("Got unexpected close without a reason", .{});
-                    // self.clearReconnect(); // let's try to reconnect if the socket closes 'normally'
-                    return error.UnexpectedClose;
-                }
-            },
+        if (try self.processGatewayMessage(arena.allocator(), message)) |event| {
+            return event;
         }
     }
 }

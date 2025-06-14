@@ -112,6 +112,19 @@ pub const Options = struct {
     intents: Intent = .{},
     host: []const u8 = "gateway.discord.gg",
     session_id: []const u8 = "",
+
+    pub fn dupe(self: Options, allocator: std.mem.Allocator) !Options {
+        const host = try allocator.dupe(u8, self.host);
+        errdefer allocator.free(host);
+        const session_id = try allocator.dupe(u8, self.session_id);
+        errdefer allocator.free(session_id);
+
+        return .{
+            .intents = self.intents,
+            .host = host,
+            .session_id = session_id,
+        };
+    }
 };
 
 pub fn Client(config: Config) type {
