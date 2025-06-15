@@ -29,9 +29,13 @@ const Handler = struct {
         if (!message.meta.queried(.member)) return;
 
         if (std.mem.startsWith(u8, message.content, "!!type")) {
-            try message.channel.anyText().triggerTypingIndicator();
-            std.Thread.sleep(std.time.ns_per_s * 5);
-            _ = try message.channel.anyText().createMessage(try .simple(allocator, "ok, typed this message", .{}));
+            const thread = try message.channel.anyText().startThreadWithOptions(.{
+                .type = .public,
+                .name = "hi this is a thread",
+                .auto_archive_after = .@"1h",
+            });
+
+            _ = try thread.anyText().createMessage(try .simple(allocator, "hey barney", .{}));
         }
     }
 

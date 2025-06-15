@@ -164,19 +164,29 @@ pub fn AnyChannel(comptime channel_type: Type, comptime used_fields: []const [:0
             try self.context.triggerTypingIndicator(self.id);
         }
 
-        pub fn roleOverwrite(self: *AnyChannelT, role_id: Snowflake) ?Permissions.Overwrite {
+        pub fn startThreadWithOptions(self: AnyChannelT, options: Client.StartThreadOptions) !*Channel {
+            comptime if (!channel_type.messageable()) @compileError("Cannot start a thread in " ++ @tagName(channel_type) ++ " channels");
+            return try self.context.startThreadWithoutMessageWithOptions(self.id, options);
+        }
+
+        pub fn startThread(self: AnyChannelT, @"type": Client.StartThreadOptions.Type, name: []const u8) !*Channel {
+            comptime if (!channel_type.messageable()) @compileError("Cannot start a thread in " ++ @tagName(channel_type) ++ " channels");
+            return try self.context.startThreadWithoutMessage(self.id, @"type", name);
+        }
+
+        pub fn roleOverwrite(self: AnyChannelT, role_id: Snowflake) ?Permissions.Overwrite {
             return for (self.permission_overwrites) |overwrite| {
                 if (overwrite.type == .role and overwrite.id == role_id) break overwrite;
             } else null;
         }
 
-        pub fn memberOverwrite(self: *AnyChannelT, member_user_id: Snowflake) ?Permissions.Overwrite {
+        pub fn memberOverwrite(self: AnyChannelT, member_user_id: Snowflake) ?Permissions.Overwrite {
             return for (self.permission_overwrites) |overwrite| {
                 if (overwrite.type == .member and overwrite.id == member_user_id) break overwrite;
             } else null;
         }
 
-        pub fn computePermissionsForMember(self: *AnyChannelT, member: *Guild.Member) Permissions {
+        pub fn computePermissionsForMember(self: AnyChannelT, member: *Guild.Member) Permissions {
             comptime if (!channel_type.inGuild()) @compileError("Cannot compute permissions in " ++ @tagName(channel_type) ++ " channels");
 
             var member_permissions = member.computePermissions();

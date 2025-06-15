@@ -852,7 +852,7 @@ pub fn createDM(self: *Client, user_id: Snowflake) !*Channel {
 
     const channel_response = try req.fetchJson(gateway_message.Channel);
     const channel = try self.channels.cache.patch(self, try .resolve(channel_response.id), channel_response);
-    try self.channels.add(channel);
+    try self.channels.pool.add(channel);
     return channel;
 }
 
@@ -895,6 +895,81 @@ pub fn createReaction(self: *Client, channel_id: Snowflake, message_id: Snowflak
     });
     defer req.deinit();
     try req.fetch();
+}
+
+pub const StartThreadOptions = struct {
+    pub const Type = enum {
+        public,
+        private,
+        announcement,
+
+        pub fn channelType(self: Type) Channel.Type {
+            return switch (self) {
+                .public => .public_thread,
+                .private => .private_thread,
+                .announcement => .announcement_thread,
+            };
+        }
+    };
+
+    pub const ArchiveDuration = enum(i32) {
+        @"1h" = 60,
+        @"1d" = 1440,
+        @"3d" = 4320,
+        @"1w" = 10080,
+    };
+
+    type: Type,
+    name: []const u8,
+    auto_archive_after: ?ArchiveDuration = null,
+    invitable: ?bool = null,
+    rate_limit_seconds: ?u32 = null,
+};
+
+pub fn startThreadWithoutMessageWithOptions(self: *Client, channel_id: Snowflake, options: StartThreadOptions) !*Channel {
+    var req = try self.rest_client.create(.POST, endpoints.start_thread_without_message, .{
+        .channel_id = channel_id,
+    });
+    errdefer req.deinit();
+
+    var jw = try req.beginJson();
+
+    try jw.beginObject();
+    {
+        try jw.objectField("name");
+        try jw.write(options.name);
+    }
+    {
+        try jw.objectField("type");
+        try jw.write(@intFromEnum(options.type.channelType()));
+    }
+    if (options.auto_archive_after) |auto_archive_after| {
+        try jw.objectField("auto_archive_duration");
+        try jw.write(@intFromEnum(auto_archive_after));
+    }
+    if (options.type == .private) {
+        if (options.invitable) |invitable| {
+            try jw.objectField("invitable");
+            try jw.write(invitable);
+        }
+    }
+    if (options.rate_limit_seconds) |rate_limit| {
+        try jw.objectField("rate_limit_per_user");
+        try jw.write(rate_limit);
+    }
+    try jw.endObject();
+
+    const channel_response = try req.fetchJson(gateway_message.Channel);
+    const channel = try self.channels.cache.patch(self, try .resolve(channel_response.id), channel_response);
+    try self.channels.pool.add(channel);
+    return channel;
+}
+
+pub fn startThreadWithoutMessage(self: *Client, channel_id: Snowflake, @"type": StartThreadOptions.Type, name: []const u8) !*Channel {
+    return try self.startThreadWithoutMessageWithOptions(channel_id, .{
+        .type = @"type",
+        .name = name,
+    });
 }
 
 pub fn bulkOverwriteGlobalApplicationCommands(

@@ -283,8 +283,8 @@ pub const Channel = struct {
         auto_archive_duration: i32,
         archive_timestamp: Iso8601Timestamp,
         locked: bool,
-        invitable: ?bool,
-        create_timestamp: ??Iso8601Timestamp,
+        invitable: Elective(bool) = .not_given,
+        create_timestamp: Elective(?Iso8601Timestamp) = .not_given,
     };
 
     pub const ThreadMember = struct {
