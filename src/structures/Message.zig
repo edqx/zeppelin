@@ -161,3 +161,7 @@ pub fn delete(self: *Message) !void {
 pub fn createReaction(self: *Message, reaction: ReactionAdd) !void {
     try self.context.createReaction(self.channel.id, self.id, reaction);
 }
+
+pub fn startThread(self: *Message, name: []const u8, options: Client.StartThreadOptions) !*Channel {
+    return try self.context.startThreadFromMessage(self.channel.id, self.id, name, options);
+}

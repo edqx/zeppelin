@@ -153,14 +153,9 @@ pub fn AnyChannel(comptime channel_type: Type, comptime used_fields: []const [:0
             try self.context.triggerTypingIndicator(self.id);
         }
 
-        pub fn startThreadWithOptions(self: AnyChannelT, options: Client.StartThreadOptions) !*Channel {
+        pub fn startThread(self: AnyChannelT, @"type": Client.StartThreadOptions.Type, name: []const u8, options: Client.StartThreadOptions) !*Channel {
             comptime if (!channel_type.trait(.any_threadable)) @compileError("Cannot start a thread in " ++ @tagName(channel_type) ++ " channels");
-            return try self.context.startThreadWithoutMessageWithOptions(self.id, options);
-        }
-
-        pub fn startThread(self: AnyChannelT, @"type": Client.StartThreadOptions.Type, name: []const u8) !*Channel {
-            comptime if (!channel_type.trait(.any_threadable)) @compileError("Cannot start a thread in " ++ @tagName(channel_type) ++ " channels");
-            return try self.context.startThreadWithoutMessage(self.id, @"type", name);
+            return try self.context.startThreadWithoutMessage(self.id, @"type", name, options);
         }
 
         pub fn roleOverwrite(self: AnyChannelT, role_id: Snowflake) ?Permissions.Overwrite {

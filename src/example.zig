@@ -29,11 +29,11 @@ const Handler = struct {
         if (!message.meta.queried(.member)) return;
 
         if (std.mem.startsWith(u8, message.content, "!!type")) {
-            const thread = try message.channel.anyThreadable().startThreadWithOptions(.{
-                .type = .public,
-                .name = "hi this is a thread",
-                .auto_archive_after = .@"1h",
-            });
+            // const thread = try message.channel.anyThreadable().startThread(.public, "hi this is a thread", .{
+            //     .auto_archive_after = .@"1h",
+            // });
+
+            const thread = try message.startThread("hi this is a thread", .{});
 
             _ = try thread.anyText().createMessage(try .simple(allocator, "hey barney", .{}));
         }

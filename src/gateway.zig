@@ -180,7 +180,7 @@ pub fn Client(config: Config) type {
                 .host = options.host,
                 .port = 443,
                 .tls = true,
-                .max_size = 65536 * 2,
+                .max_size = 65536 * 4,
             });
             errdefer websocket_client.deinit();
 

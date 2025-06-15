@@ -898,9 +898,11 @@ pub fn createReaction(self: *Client, channel_id: Snowflake, message_id: Snowflak
 }
 
 pub const StartThreadOptions = struct {
-    pub const Type = enum {
+    pub const Type = union(enum) {
         public,
-        private,
+        private: struct {
+            invitable: bool,
+        },
         announcement,
 
         pub fn channelType(self: Type) Channel.Type {
@@ -919,14 +921,29 @@ pub const StartThreadOptions = struct {
         @"1w" = 10080,
     };
 
-    type: Type,
-    name: []const u8,
     auto_archive_after: ?ArchiveDuration = null,
-    invitable: ?bool = null,
     rate_limit_seconds: ?u32 = null,
-};
 
-pub fn startThreadWithoutMessageWithOptions(self: *Client, channel_id: Snowflake, options: StartThreadOptions) !*Channel {
+    // not jsonStringify because it doesn't create an object
+    // to be stringified as a value in itself
+    fn jsonStringifyInner(options: StartThreadOptions, jw: anytype) !void {
+        if (options.auto_archive_after) |auto_archive_after| {
+            try jw.objectField("auto_archive_duration");
+            try jw.write(@intFromEnum(auto_archive_after));
+        }
+        if (options.rate_limit_seconds) |rate_limit| {
+            try jw.objectField("rate_limit_per_user");
+            try jw.write(rate_limit);
+        }
+    }
+};
+pub fn startThreadWithoutMessage(
+    self: *Client,
+    channel_id: Snowflake,
+    @"type": StartThreadOptions.Type,
+    name: []const u8,
+    options: StartThreadOptions,
+) !*Channel {
     var req = try self.rest_client.create(.POST, endpoints.start_thread_without_message, .{
         .channel_id = channel_id,
     });
@@ -937,26 +954,21 @@ pub fn startThreadWithoutMessageWithOptions(self: *Client, channel_id: Snowflake
     try jw.beginObject();
     {
         try jw.objectField("name");
-        try jw.write(options.name);
+        try jw.write(name);
     }
     {
         try jw.objectField("type");
-        try jw.write(@intFromEnum(options.type.channelType()));
+        try jw.write(@intFromEnum(@"type".channelType()));
     }
-    if (options.auto_archive_after) |auto_archive_after| {
-        try jw.objectField("auto_archive_duration");
-        try jw.write(@intFromEnum(auto_archive_after));
-    }
-    if (options.type == .private) {
-        if (options.invitable) |invitable| {
+    switch (@"type") {
+        .public, .announcement => {},
+        .private => |private_options| {
             try jw.objectField("invitable");
-            try jw.write(invitable);
-        }
+            try jw.write(private_options.invitable);
+        },
     }
-    if (options.rate_limit_seconds) |rate_limit| {
-        try jw.objectField("rate_limit_per_user");
-        try jw.write(rate_limit);
-    }
+
+    try options.jsonStringifyInner(&jw);
     try jw.endObject();
 
     const channel_response = try req.fetchJson(gateway_message.Channel);
@@ -965,11 +977,33 @@ pub fn startThreadWithoutMessageWithOptions(self: *Client, channel_id: Snowflake
     return channel;
 }
 
-pub fn startThreadWithoutMessage(self: *Client, channel_id: Snowflake, @"type": StartThreadOptions.Type, name: []const u8) !*Channel {
-    return try self.startThreadWithoutMessageWithOptions(channel_id, .{
-        .type = @"type",
-        .name = name,
+pub fn startThreadFromMessage(
+    self: *Client,
+    channel_id: Snowflake,
+    message_id: Snowflake,
+    name: []const u8,
+    options: StartThreadOptions,
+) !*Channel {
+    var req = try self.rest_client.create(.POST, endpoints.start_thread_from_message, .{
+        .channel_id = channel_id,
+        .message_id = message_id,
     });
+    errdefer req.deinit();
+
+    var jw = try req.beginJson();
+
+    try jw.beginObject();
+    {
+        try jw.objectField("name");
+        try jw.write(name);
+    }
+    try options.jsonStringifyInner(&jw);
+    try jw.endObject();
+
+    const channel_response = try req.fetchJson(gateway_message.Channel);
+    const channel = try self.channels.cache.patch(self, try .resolve(channel_response.id), channel_response);
+    try self.channels.pool.add(channel);
+    return channel;
 }
 
 pub fn bulkOverwriteGlobalApplicationCommands(
