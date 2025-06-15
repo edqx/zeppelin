@@ -19,7 +19,26 @@ pub const Data = @import("../gateway_message.zig").Channel;
 const Channel = @This();
 
 pub const Type = enum(i32) {
-    unknown = -2,
+    const trait_map = .{
+        .{ .guild_text, .{ .any_text, .any_guild, .any_threadable } },
+        .{ .dm, .{.any_text} },
+        .{ .guild_voice, .{ .any_text, .any_guild } },
+        .{ .group_dm, .{.any_text} },
+        .{ .guild_category, .{.any_guild} },
+        .{ .guild_announcement, .{ .any_text, .any_guild, .any_threadable } },
+        .{ .announcement_thread, .{.any_text} },
+        .{ .public_thread, .{.any_text} },
+        .{ .private_thread, .{.any_text} },
+        .{ .guild_stage_voice, .{.any_guild} },
+        .{ .guild_directory, .{.any_guild} },
+        .{ .guild_forum, .{ .any_guild, .any_forum } },
+        .{ .guild_media, .{ .any_guild, .any_forum } },
+    };
+
+    unknown = -5,
+    any_forum = -4,
+    any_threadable = -3,
+    any_guild = -2,
     any_text = -1,
     guild_text = 0,
     dm,
@@ -35,46 +54,16 @@ pub const Type = enum(i32) {
     guild_forum,
     guild_media,
 
-    pub fn messageable(self: Type) bool {
-        return switch (self) {
-            .unknown => unreachable,
-            .any_text,
-            .guild_text,
-            .dm,
-            .guild_voice,
-            .group_dm,
-            .guild_announcement,
-            .announcement_thread,
-            .public_thread,
-            .private_thread,
-            .guild_stage_voice,
-            .guild_forum,
-            .guild_media,
-            => true,
-            .guild_category, .guild_directory => false,
-        };
-    }
-
-    pub fn inGuild(self: Type) bool {
-        return switch (self) {
-            .unknown => unreachable,
-            .guild_text,
-            .guild_voice,
-            .guild_announcement,
-            .guild_stage_voice,
-            .guild_forum,
-            .guild_media,
-            .guild_category,
-            .guild_directory,
-            => true,
-            .any_text,
-            .dm,
-            .group_dm,
-            .announcement_thread,
-            .public_thread,
-            .private_thread,
-            => false,
-        };
+    pub fn trait(self: Type, has: Type) bool {
+        if (std.mem.eql(u8, @tagName(self), @tagName(has))) return true;
+        inline for (trait_map) |trait_entry| {
+            if (std.mem.eql(u8, @tagName(trait_entry[0]), @tagName(self))) {
+                inline for (trait_entry[1]) |other| {
+                    if (std.mem.eql(u8, @tagName(other), @tagName(has))) return true;
+                }
+            }
+        }
+        return false;
     }
 };
 
@@ -150,27 +139,27 @@ pub fn AnyChannel(comptime channel_type: Type, comptime used_fields: []const [:0
         }
 
         pub fn messageWriter(self: *AnyChannelT) !Client.MessageWriter {
-            comptime if (!channel_type.messageable()) @compileError("Cannot create messages in " ++ @tagName(channel_type) ++ " channels");
+            comptime if (!channel_type.trait(.any_text)) @compileError("Cannot create messages in " ++ @tagName(channel_type) ++ " channels");
             return try self.context.messageWriter(self.id);
         }
 
         pub fn createMessage(self: AnyChannelT, message_builder: MessageBuilder) !*Message {
-            comptime if (!channel_type.messageable()) @compileError("Cannot create messages in " ++ @tagName(channel_type) ++ " channels");
+            comptime if (!channel_type.trait(.any_text)) @compileError("Cannot create messages in " ++ @tagName(channel_type) ++ " channels");
             return try self.context.createMessage(self.id, message_builder);
         }
 
         pub fn triggerTypingIndicator(self: AnyChannelT) !void {
-            comptime if (!channel_type.messageable()) @compileError("Cannot trigger typing indicator in " ++ @tagName(channel_type) ++ " channels");
+            comptime if (!channel_type.trait(.any_text)) @compileError("Cannot trigger typing indicator in " ++ @tagName(channel_type) ++ " channels");
             try self.context.triggerTypingIndicator(self.id);
         }
 
         pub fn startThreadWithOptions(self: AnyChannelT, options: Client.StartThreadOptions) !*Channel {
-            comptime if (!channel_type.messageable()) @compileError("Cannot start a thread in " ++ @tagName(channel_type) ++ " channels");
+            comptime if (!channel_type.trait(.any_threadable)) @compileError("Cannot start a thread in " ++ @tagName(channel_type) ++ " channels");
             return try self.context.startThreadWithoutMessageWithOptions(self.id, options);
         }
 
         pub fn startThread(self: AnyChannelT, @"type": Client.StartThreadOptions.Type, name: []const u8) !*Channel {
-            comptime if (!channel_type.messageable()) @compileError("Cannot start a thread in " ++ @tagName(channel_type) ++ " channels");
+            comptime if (!channel_type.trait(.any_threadable)) @compileError("Cannot start a thread in " ++ @tagName(channel_type) ++ " channels");
             return try self.context.startThreadWithoutMessage(self.id, @"type", name);
         }
 
@@ -187,12 +176,11 @@ pub fn AnyChannel(comptime channel_type: Type, comptime used_fields: []const [:0
         }
 
         pub fn computePermissionsForMember(self: AnyChannelT, member: *Guild.Member) Permissions {
-            comptime if (!channel_type.inGuild()) @compileError("Cannot compute permissions in " ++ @tagName(channel_type) ++ " channels");
+            comptime if (!channel_type.trait(.any_guild)) @compileError("Cannot compute permissions in " ++ @tagName(channel_type) ++ " channels");
 
             var member_permissions = member.computePermissions();
 
             if (member_permissions.administrator) return .all;
-
             if (self.roleOverwrite(self.guild.id)) |overwrite| { // everyone
                 member_permissions = member_permissions.withDenied(overwrite.deny).withAllowed(overwrite.allow);
             }
@@ -231,6 +219,9 @@ pub const Inner = union(Type) {
     const has_name: []const [:0]const u8 = &.{"name"};
 
     unknown: void,
+    any_forum: void,
+    any_threadable: void,
+    any_guild: void,
     any_text: void,
     guild_text: AnyChannel(.guild_text, in_guild ++ has_name),
     dm: AnyChannel(.dm, &.{}),
@@ -246,12 +237,8 @@ pub const Inner = union(Type) {
     guild_forum: AnyChannel(.guild_forum, in_guild ++ has_name),
     guild_media: AnyChannel(.guild_media, in_guild ++ has_name),
 
-    pub fn messageable(self: Inner) bool {
-        return std.meta.activeTag(self).messageable();
-    }
-
-    pub fn inGuild(self: Inner) bool {
-        return std.meta.activeTag(self).inGuild();
+    pub fn trait(self: Inner, has: Type) bool {
+        return std.meta.activeTag(self).trait(has);
     }
 };
 
@@ -266,7 +253,7 @@ inner: Inner = .unknown,
 
 pub fn deinit(self: *Channel) void {
     switch (self.inner) {
-        .unknown, .any_text => {},
+        .unknown, .any_forum, .any_threadable, .any_guild, .any_text => {},
         inline else => |*inner| inner.deinit(),
     }
 }
@@ -274,7 +261,7 @@ pub fn deinit(self: *Channel) void {
 pub fn patch(self: *Channel, data: Data) !void {
     const @"type" = @as(Type, @enumFromInt(data.type));
     var inner = switch (@"type") {
-        .unknown, .any_text => unreachable,
+        .unknown, .any_forum, .any_threadable, .any_guild, .any_text => unreachable,
         inline else => |tag| @unionInit(Inner, @tagName(tag), .{
             .context = self.context,
             .id = self.id,
@@ -282,19 +269,32 @@ pub fn patch(self: *Channel, data: Data) !void {
     };
 
     switch (inner) {
-        .unknown, .any_text => unreachable,
+        .unknown, .any_forum, .any_threadable, .any_guild, .any_text => unreachable,
         inline else => |*any_channel| try any_channel.patch(data),
     }
 
     self.meta.patch(.inner, inner);
 }
 
+pub fn anyTrait(self: *Channel, comptime trait: Type) AnyChannel(trait, &.{}) {
+    std.debug.assert(self.inner.trait(trait));
+    return .{ .context = self.context, .id = self.id };
+}
+
 pub fn anyText(self: *Channel) AnyChannel(.any_text, &.{}) {
-    std.debug.assert(self.inner.messageable());
-    return .{
-        .context = self.context,
-        .id = self.id,
-    };
+    return self.anyTrait(.any_text);
+}
+
+pub fn anyGuild(self: *Channel) AnyChannel(.any_guild, &.{}) {
+    return self.anyTrait(.any_guild);
+}
+
+pub fn anyThreadable(self: *Channel) AnyChannel(.any_threadable, &.{}) {
+    return self.anyTrait(.any_threadable);
+}
+
+pub fn anyForum(self: *Channel) AnyChannel(.any_forum, &.{}) {
+    return self.anyTrait(.any_forum);
 }
 
 pub fn mention(self: *Channel) Mention {
