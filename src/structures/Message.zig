@@ -13,6 +13,8 @@ const User = @import("User.zig");
 
 const gateway_message = @import("../gateway_message.zig");
 
+const MessageBuilder = @import("../MessageBuilder.zig");
+
 pub const Data = struct {
     base: gateway_message.Message,
     guild_id: ?gateway_message.Snowflake,
@@ -164,4 +166,18 @@ pub fn createReaction(self: *Message, reaction: ReactionAdd) !void {
 
 pub fn startThread(self: *Message, name: []const u8, options: Client.StartThreadOptions) !*Channel {
     return try self.context.startThreadFromMessage(self.channel.id, self.id, name, options);
+}
+
+pub fn createReplyMessage(self: *Message, message_builder: MessageBuilder, options: Client.MessageWriter.Options) !*Message {
+    std.debug.assert(options.reference == null);
+    var new_options = options;
+    new_options.reference = .{ .reply_to = self.id };
+    return try self.context.createMessage(self.channel.id, message_builder, new_options);
+}
+
+pub fn replyMessageWriter(self: *Message, options: Client.MessageWriter.Options) !*Client.MessageWriter {
+    std.debug.assert(options.reference == null);
+    var new_options = options;
+    new_options.reference = .{ .reply_to = self.id };
+    return try self.context.messageWriter(self.channel.id, new_options);
 }

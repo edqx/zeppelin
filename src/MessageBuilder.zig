@@ -421,8 +421,7 @@ pub fn embed(self: *MessageBuilder) !*EmbedBuilder {
     return builder;
 }
 
-pub fn jsonStringify(self: MessageBuilder, jw: anytype) !void {
-    try jw.beginObject();
+pub fn jsonStringifyInner(self: MessageBuilder, jw: anytype) !void {
     {
         try jw.objectField("content");
         try jw.write(self._content.items);
@@ -435,5 +434,10 @@ pub fn jsonStringify(self: MessageBuilder, jw: anytype) !void {
         }
         try jw.endArray();
     }
+}
+
+pub fn jsonStringify(self: MessageBuilder, jw: anytype) !void {
+    try jw.beginObject();
+    try self.jsonStringifyInner(jw);
     try jw.endObject();
 }

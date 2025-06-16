@@ -33,10 +33,14 @@ const Handler = struct {
             //     .auto_archive_after = .@"1h",
             // });
 
-            const thread = try message.startThread("hi this is a thread", .{});
-
-            _ = try thread.anyText().createMessage(try .simple(allocator, "hey barney", .{}));
+            _ = try message.createReplyMessage(try .simple(allocator, "hey barney", .{}), .{});
         }
+
+        // if (std.mem.eql(u8, message.content, "!!reply")) {
+        //     _ = try message.createReplyMessage(try .simple(allocator, "hey barney", .{}));
+
+        //     const writer = try message.replyMessageWriter();
+        // }
     }
 
     pub fn interactionCreate(self: *Handler, interaction_create_event: zeppelin.Event.InteractionCreate) !void {

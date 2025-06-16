@@ -737,7 +737,50 @@ pub fn receiveAndDispatch(self: *Client, handler: anytype) !void {
 }
 
 pub const MessageWriter = struct {
+    pub const Options = struct {
+        pub const Reference = union(enum(i32)) {
+            reply_to: Snowflake,
+            forward: struct {
+                message_id: Snowflake,
+                channel_id: Snowflake,
+                guild_id: Snowflake,
+            },
+
+            pub fn jsonStringify(self: Reference, jw: anytype) !void {
+                try jw.beginObject();
+                {
+                    try jw.objectField("type");
+                    try jw.write(@intFromEnum(std.meta.activeTag(self)));
+                }
+                switch (self) {
+                    .reply_to => |message_id| {
+                        try jw.objectField("message_id");
+                        try jw.write(message_id);
+                    },
+                    .forward => |forward_options| {
+                        {
+                            try jw.objectField("message_id");
+                            try jw.write(forward_options.message_id);
+                        }
+                        {
+                            try jw.objectField("channel_id");
+                            try jw.write(forward_options.channel_id);
+                        }
+                        {
+                            try jw.objectField("guild_id");
+                            try jw.write(forward_options.guild_id);
+                        }
+                    },
+                }
+                try jw.endObject();
+            }
+        };
+
+        reference: ?Reference = null,
+    };
+
     client: *Client,
+    options: Options,
 
     req: Rest.Request,
     form_writer: Rest.Request.FormDataWriter,
@@ -760,7 +803,13 @@ pub const MessageWriter = struct {
 
         {
             var json_writer = std.json.writeStream(self.form_writer.writer(), .{});
-            try json_writer.write(message_builder);
+            try json_writer.beginObject();
+            try message_builder.jsonStringifyInner(&json_writer);
+            if (self.options.reference) |reference| {
+                try json_writer.objectField("message_reference");
+                try json_writer.write(reference);
+            }
+            try json_writer.endObject();
         }
 
         try self.form_writer.endEntry();
@@ -806,7 +855,7 @@ pub const MessageWriter = struct {
     }
 };
 
-pub fn messageWriter(self: *Client, channel_id: Snowflake) !MessageWriter {
+pub fn messageWriter(self: *Client, channel_id: Snowflake, options: MessageWriter.Options) !MessageWriter {
     var req = try self.rest_client.create(.POST, endpoints.create_message, .{
         .channel_id = channel_id,
     });
@@ -816,14 +865,15 @@ pub fn messageWriter(self: *Client, channel_id: Snowflake) !MessageWriter {
 
     return .{
         .client = self,
+        .options = options,
         .req = req,
         .form_writer = form_writer,
     };
 }
 
-pub fn createMessage(self: *Client, channel_id: Snowflake, message_builder: MessageBuilder) !*Message {
+pub fn createMessage(self: *Client, channel_id: Snowflake, message_builder: MessageBuilder, options: MessageWriter.Options) !*Message {
     defer message_builder.deinit();
-    var writer = try self.messageWriter(channel_id);
+    var writer = try self.messageWriter(channel_id, options);
     try writer.write(message_builder);
     return try writer.create();
 }
@@ -937,6 +987,7 @@ pub const StartThreadOptions = struct {
         }
     }
 };
+
 pub fn startThreadWithoutMessage(
     self: *Client,
     channel_id: Snowflake,

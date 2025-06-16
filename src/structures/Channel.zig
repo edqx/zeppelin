@@ -138,14 +138,14 @@ pub fn AnyChannel(comptime channel_type: Type, comptime used_fields: []const [:0
             }
         }
 
-        pub fn messageWriter(self: *AnyChannelT) !Client.MessageWriter {
+        pub fn messageWriter(self: *AnyChannelT, options: Client.MessageWriter.Options) !Client.MessageWriter {
             comptime if (!channel_type.trait(.any_text)) @compileError("Cannot create messages in " ++ @tagName(channel_type) ++ " channels");
-            return try self.context.messageWriter(self.id);
+            return try self.context.messageWriter(self.id, options);
         }
 
-        pub fn createMessage(self: AnyChannelT, message_builder: MessageBuilder) !*Message {
+        pub fn createMessage(self: AnyChannelT, message_builder: MessageBuilder, options: Client.MessageWriter.Options) !*Message {
             comptime if (!channel_type.trait(.any_text)) @compileError("Cannot create messages in " ++ @tagName(channel_type) ++ " channels");
-            return try self.context.createMessage(self.id, message_builder);
+            return try self.context.createMessage(self.id, message_builder, options);
         }
 
         pub fn triggerTypingIndicator(self: AnyChannelT) !void {
