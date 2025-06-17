@@ -41,6 +41,15 @@ const Handler = struct {
 
         //     const writer = try message.replyMessageWriter();
         // }
+
+        if (message.reference) |reference| {
+            switch (reference) {
+                .reply => |replied_to| {
+                    _ = try message.channel.anyText().createMessage(try .simple(allocator, "Stop replying to messages! '{s}'", .{replied_to.content}), .{});
+                },
+                .forward => {},
+            }
+        }
     }
 
     pub fn interactionCreate(self: *Handler, interaction_create_event: zeppelin.Event.InteractionCreate) !void {

@@ -38,8 +38,8 @@ const Type = enum(i32) {
     guild_boost_tier_2,
     guild_boost_tier_3,
     channel_follow_add,
-    guild_discovery_disqualified,
-    guild_discovery_requalified = 14,
+    guild_discovery_disqualified = 14,
+    guild_discovery_requalified,
     guild_discovery_grace_period_initial_warning,
     guild_discovery_grace_period_final_warning,
     thread_created,
@@ -113,19 +113,33 @@ pub const Color = packed struct(u24) {
     }
 };
 
+pub const ReferenceType = enum(i32) {
+    reply = 0,
+    forward = 1,
+};
+
+pub const Reference = union(ReferenceType) {
+    reply: *Message,
+    forward: *Message,
+};
+
 meta: QueriedFields(Message, &.{
-    "guild",  "channel", "author",
-    "member", "content",
+    "type",   "guild",   "channel",   "author",
+    "member", "content", "reference",
 }) = .none,
 
 context: *Client,
 id: Snowflake,
+
+type: Type = .default,
 
 guild: *Guild = undefined,
 channel: *Channel = undefined,
 author: *User = undefined,
 member: *Guild.Member = undefined,
 content: []const u8 = "",
+
+reference: ?Reference = null,
 
 pub fn deinit(self: *Message) void {
     const allocator = self.context.allocator;
@@ -134,6 +148,8 @@ pub fn deinit(self: *Message) void {
 
 pub fn patch(self: *Message, data: Data) !void {
     const allocator = self.context.allocator;
+
+    self.meta.patch(.type, @enumFromInt(data.base.type));
 
     if (data.guild_id) |guild_id| {
         const guild = try self.context.guilds.cache.touch(self.context, try .resolve(guild_id));
@@ -154,6 +170,66 @@ pub fn patch(self: *Message, data: Data) !void {
 
     allocator.free(self.content);
     self.meta.patch(.content, try allocator.dupe(u8, data.base.content));
+
+    std.log.info("type: {}", .{self.type});
+
+    if (self.type == .reply) {
+        switch (data.base.message_reference) {
+            .not_given => {},
+            .val => |reference_data| patch_reference: {
+                const reference_type: ReferenceType = switch (reference_data.type) {
+                    .not_given => .reply,
+                    .val => |ref_int| @enumFromInt(ref_int),
+                };
+
+                const message_id: Snowflake = switch (reference_data.message_id) {
+                    .not_given => break :patch_reference,
+                    .val => |message_id_data| try .resolve(message_id_data),
+                };
+
+                const message = try self.context.messages.cache.touch(self.context, message_id);
+
+                switch (reference_data.guild_id) {
+                    .not_given => {},
+                    .val => |guild_id_data| {
+                        const ref_guild = try self.context.guilds.cache.touch(self.context, try .resolve(guild_id_data));
+                        message.meta.patch(.guild, ref_guild);
+                    },
+                }
+
+                switch (reference_data.channel_id) {
+                    .not_given => {},
+                    .val => |channel_id_data| {
+                        const ref_channel = try self.context.channels.cache.touch(self.context, try .resolve(channel_id_data));
+                        message.meta.patch(.channel, ref_channel);
+                    },
+                }
+
+                switch (data.base.referenced_message) {
+                    .not_given => {},
+                    .val => |maybe_referenced_message_data| {
+                        if (maybe_referenced_message_data) |referenced_message_data| {
+                            try message.patch(.{
+                                .base = referenced_message_data.*,
+                                .guild_id = null,
+                                .member = null,
+                                .mentions = null,
+                            });
+                        } else {
+                            // message was deleted
+                        }
+                    },
+                }
+
+                self.meta.patch(.reference, switch (reference_type) {
+                    .reply => .{ .reply = message },
+                    .forward => .{ .forward = message },
+                });
+            },
+        }
+    } else {
+        self.meta.patch(.reference, null);
+    }
 }
 
 pub fn delete(self: *Message) !void {

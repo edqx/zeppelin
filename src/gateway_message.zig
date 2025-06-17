@@ -428,7 +428,14 @@ pub const Message = struct {
         party_id: Elective([]const u8) = .not_given,
     };
 
-    pub const Reference = std.json.Value; // TODO
+    pub const Reference = struct {
+        type: Elective(i32) = .not_given,
+        message_id: Elective(Snowflake) = .not_given,
+        channel_id: Elective(Snowflake) = .not_given,
+        guild_id: Elective(Snowflake) = .not_given,
+        fail_if_not_exists: Elective(bool) = .not_given,
+    };
+
     pub const Snapshot = std.json.Value; // TODO
     pub const InteractionMetadata = std.json.Value; // TODO
     pub const Component = std.json.Value; // TODO
