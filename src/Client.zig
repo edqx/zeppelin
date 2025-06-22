@@ -733,7 +733,7 @@ pub fn receiveAndDispatch(self: *Client, handler: anytype) !void {
     defer arena.deinit();
 
     const event = try self.receive(&arena);
-    try self.dispatch(event, handler);
+    try Event.dispatch(event, handler);
 }
 
 pub const MessageWriter = struct {
