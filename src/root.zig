@@ -12,6 +12,7 @@ pub const User = @import("structures/User.zig");
 pub const Role = @import("structures/Role.zig");
 
 pub const Permissions = @import("permissions.zig").Permissions;
+pub const Snowflake = @import("snowflake.zig").Snowflake;
 
 pub const MessageBuilder = @import("MessageBuilder.zig");
 pub const Mention = MessageBuilder.Mention;
