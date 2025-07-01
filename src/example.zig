@@ -29,13 +29,9 @@ const Handler = struct {
         if (!message.meta.queried(.member)) return;
 
         if (std.mem.startsWith(u8, message.content, "!!type")) {
-            _ = try message.createReplyMessage(try .simple(allocator, "Your message was created at {}", .{message.created_at}), .{});
-        }
-
-        if (message.reference) |ref| {
-            if (ref == .reply) {
-                _ = try message.createReplyMessage(try .simple(allocator, "Replied to message was created by {}", .{ref.reply.author.mention()}), .{});
-            }
+            var message_writer = try message.replyMessageWriter(.{});
+            try message_writer.write(try .simple(allocator, "Your message was created at {}", .{message.created_at}));
+            _ = try message_writer.create();
         }
     }
 

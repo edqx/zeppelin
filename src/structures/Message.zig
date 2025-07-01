@@ -274,7 +274,7 @@ pub fn createReplyMessage(self: *Message, message_builder: MessageBuilder, optio
     return try self.context.createMessage(self.channel.id, message_builder, new_options);
 }
 
-pub fn replyMessageWriter(self: *Message, options: Client.MessageWriter.Options) !*Client.MessageWriter {
+pub fn replyMessageWriter(self: *Message, options: Client.MessageWriter.Options) !Client.MessageWriter {
     std.debug.assert(options.reference == null);
     var new_options = options;
     new_options.reference = .{ .reply_to = self.id };
