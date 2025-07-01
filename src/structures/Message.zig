@@ -1,7 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const DateTime = @import("datetime").datetime.DateTime;
+const Datetime = @import("datetime").datetime.Datetime;
 
 const Snowflake = @import("../snowflake.zig").Snowflake;
 const QueriedFields = @import("../queryable.zig").QueriedFields;
@@ -126,8 +126,9 @@ pub const Reference = union(ReferenceType) {
 };
 
 meta: QueriedFields(Message, &.{
-    "type",   "guild",   "channel",   "author",
-    "member", "content", "reference",
+    "type",      "guild",   "channel",   "author",
+    "member",    "content", "reference", "created_at",
+    "edited_at",
 }) = .none,
 
 context: *Client,
@@ -143,8 +144,8 @@ content: []const u8 = "",
 
 reference: ?Reference = null,
 
-created_at: DateTime = 0,
-edited_at: ?DateTime = 0,
+created_at: Datetime = undefined,
+edited_at: ?Datetime = undefined,
 
 pub fn deinit(self: *Message) void {
     const allocator = self.context.allocator;
@@ -232,6 +233,16 @@ pub fn patch(self: *Message, data: Data) !void {
         }
     } else {
         self.meta.patch(.reference, null);
+    }
+
+    const created_at = try Datetime.parseIso(data.base.timestamp);
+    self.meta.patch(.created_at, created_at);
+
+    if (data.base.edited_timestamp) |edited_timestamp| {
+        const edited_at = try Datetime.parseIso(edited_timestamp);
+        self.meta.patch(.edited_at, edited_at);
+    } else {
+        self.meta.patch(.edited_at, null);
     }
 }
 

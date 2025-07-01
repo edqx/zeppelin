@@ -29,26 +29,7 @@ const Handler = struct {
         if (!message.meta.queried(.member)) return;
 
         if (std.mem.startsWith(u8, message.content, "!!type")) {
-            // const thread = try message.channel.anyThreadable().startThread(.public, "hi this is a thread", .{
-            //     .auto_archive_after = .@"1h",
-            // });
-
-            _ = try message.createReplyMessage(try .simple(allocator, "hey barney", .{}), .{});
-        }
-
-        // if (std.mem.eql(u8, message.content, "!!reply")) {
-        //     _ = try message.createReplyMessage(try .simple(allocator, "hey barney", .{}));
-
-        //     const writer = try message.replyMessageWriter();
-        // }
-
-        if (message.reference) |reference| {
-            switch (reference) {
-                .reply => |replied_to| {
-                    _ = try message.channel.anyText().createMessage(try .simple(allocator, "Stop replying to messages! '{s}'", .{replied_to.content}), .{});
-                },
-                .forward => {},
-            }
+            _ = try message.createReplyMessage(try .simple(allocator, "Your message was created at {}", .{message.created_at}), .{});
         }
     }
 

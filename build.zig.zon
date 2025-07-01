@@ -12,8 +12,8 @@
             .hash = "wardrobe-0.0.1-Hd1QO7BgAAAM9mdmUrWUnT8Hv5BcsEBLvfT6-N5N1KMB",
         },
         .datetime = .{
-            .url = "git+https://github.com/frmdstryr/zig-datetime#feca3bca5c81409c049d8d2f4dc06012a374d085",
-            .hash = "datetime-0.8.0-cJNXzNLZAQADGScmVIKJTyogbfkbIFldrmSK8RweZ3Eg",
+            .url = "git+https://github.com/edqx/zig-datetime#823b84117c752d4342a91a8a8e0bd6c41048ac8f",
+            .hash = "datetime-0.8.0-cJNXzL7jAQBMC4cwlOK5o2h9PR7LiqCgFcgVO74KrZU8",
         },
     },
     .paths = .{
