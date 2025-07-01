@@ -241,6 +241,15 @@ pub fn patch(self: *Guild, data: Data) !void {
     }
 }
 
+pub fn fetchUpdate(self: *Guild) !void {
+    _ = try self.context.guilds.fetch(self.id);
+}
+
+pub fn fetchUpdateIfIncomplete(self: *Guild) !void {
+    if (self.meta.complete()) return;
+    try self.fetchUpdate();
+}
+
 pub fn everyoneRole(self: *Guild) !*Role {
     const roles_cache = &self.context.roles.cache;
 

@@ -271,6 +271,15 @@ pub fn patch(self: *Channel, data: Data) !void {
     self.meta.patch(.inner, inner);
 }
 
+pub fn fetchUpdate(self: *Channel) !void {
+    _ = try self.context.channels.fetch(self.id);
+}
+
+pub fn fetchUpdateIfIncomplete(self: *Channel) !void {
+    if (self.meta.complete()) return;
+    try self.fetchUpdate();
+}
+
 pub fn anyTrait(self: *Channel, comptime trait: Type) AnyChannel(trait, &.{}) {
     std.debug.assert(self.inner.trait(trait));
     return .{ .context = self.context, .id = self.id };

@@ -48,6 +48,15 @@ pub fn patch(self: *Role, data: Data) !void {
     self.meta.patch(.mentionable, data.mentionable);
 }
 
+pub fn fetchUpdate(self: *Role) !void {
+    _ = try self.context.roles.fetch(self.guild.id, self.id);
+}
+
+pub fn fetchUpdateIfIncomplete(self: *Role) !void {
+    if (self.meta.complete()) return;
+    try self.fetchUpdate();
+}
+
 pub fn mention(self: *Role) !Mention {
     if (!self.mentionable) return error.NotMentionable;
     return .{ .role = self.id };

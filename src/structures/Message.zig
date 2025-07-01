@@ -246,6 +246,15 @@ pub fn patch(self: *Message, data: Data) !void {
     }
 }
 
+pub fn fetchUpdate(self: *Message) !void {
+    _ = try self.context.messages.fetch(self.channel.id, self.id);
+}
+
+pub fn fetchUpdateIfIncomplete(self: *Message) !void {
+    if (self.meta.complete()) return;
+    try self.fetchUpdate();
+}
+
 pub fn delete(self: *Message) !void {
     try self.context.deleteMessage(self.channel.id, self.id);
 }

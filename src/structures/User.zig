@@ -109,6 +109,15 @@ pub fn patch(self: *User, data: Data) !void {
     }
 }
 
+pub fn fetchUpdate(self: *User) !void {
+    _ = try self.context.users.fetch(self.id);
+}
+
+pub fn fetchUpdateIfIncomplete(self: *User) !void {
+    if (self.meta.complete()) return;
+    try self.fetchUpdate();
+}
+
 pub fn mention(self: *User) Mention {
     return .{ .user = self.id };
 }

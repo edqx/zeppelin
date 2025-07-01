@@ -31,6 +31,12 @@ const Handler = struct {
         if (std.mem.startsWith(u8, message.content, "!!type")) {
             _ = try message.createReplyMessage(try .simple(allocator, "Your message was created at {}", .{message.created_at}), .{});
         }
+
+        if (message.reference) |ref| {
+            if (ref == .reply) {
+                _ = try message.createReplyMessage(try .simple(allocator, "Replied to message was created by {}", .{ref.reply.author.mention()}), .{});
+            }
+        }
     }
 
     pub fn interactionCreate(self: *Handler, interaction_create_event: zeppelin.Event.InteractionCreate) !void {
