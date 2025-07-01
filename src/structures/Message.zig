@@ -1,6 +1,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+const DateTime = @import("datetime").datetime.DateTime;
+
 const Snowflake = @import("../snowflake.zig").Snowflake;
 const QueriedFields = @import("../queryable.zig").QueriedFields;
 const Client = @import("../Client.zig");
@@ -141,6 +143,9 @@ content: []const u8 = "",
 
 reference: ?Reference = null,
 
+created_at: DateTime = 0,
+edited_at: ?DateTime = 0,
+
 pub fn deinit(self: *Message) void {
     const allocator = self.context.allocator;
     allocator.free(self.content);
@@ -170,8 +175,6 @@ pub fn patch(self: *Message, data: Data) !void {
 
     allocator.free(self.content);
     self.meta.patch(.content, try allocator.dupe(u8, data.base.content));
-
-    std.log.info("type: {}", .{self.type});
 
     if (self.type == .reply) {
         switch (data.base.message_reference) {
