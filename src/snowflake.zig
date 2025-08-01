@@ -26,13 +26,13 @@ pub const Snowflake = packed struct(u64) {
     internal_worker_id: u5,
     timestamp: u42,
 
-    pub fn format(self: Snowflake, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: Snowflake, writer: *std.Io.Writer) !void {
         try writer.print("{}", .{@as(u64, @bitCast(self))});
     }
 
     pub fn jsonStringify(self: Snowflake, jw: anytype) !void {
         try jw.beginWriteRaw();
-        try jw.stream.print("\"{}\"", .{self});
+        try jw.writer.print("\"{f}\"", .{self});
         jw.endWriteRaw();
     }
 };

@@ -39,39 +39,54 @@ pub fn multiWriter(streams: anytype) MultiWriter(@TypeOf(streams)) {
 }
 
 pub const Request = struct {
+    pub const HttpWriter = std.http.Client.Request.Writer;
+    pub const FormDataWriter = wardrobe.WriteStream(HttpWriter);
+
+    pub const Writer = struct {
+        request: *Request,
+        http_writer: HttpWriter,
+        adapter: HttpWriter.Adapter,
+
+        pub fn jsonWriter(self: *Writer) !std.json.Stringify {
+            try self.request.setJson();
+            return .{ .writer = &self.adapter.new_interface };
+        }
+
+        pub fn formDataWriter(self: *Writer) !FormDataWriter {
+            const boundary = try self.request.setFormData();
+            return wardrobe.writeStream(boundary, self.http_writer);
+        }
+    };
+
     arena: std.heap.ArenaAllocator,
     random: std.Random,
     http_request: std.http.Client.Request,
 
     sent: bool = false,
 
-    // pub const Writer = MultiWriter(struct { std.fs.File.Writer, std.http.Client.Request.Writer }).Writer;
-    pub const Writer = std.http.Client.Request.Writer;
-    pub const JsonWriter = std.json.WriteStream(Writer, .{ .checked_to_fixed_depth = 256 });
-    pub const FormDataWriter = wardrobe.WriteStream(Writer);
-
     pub fn deinit(self: *Request) void {
         self.http_request.deinit();
         self.arena.deinit();
     }
 
-    pub fn writer(self: *Request) std.http.Client.Request.Writer {
-        return self.http_request.writer();
+    pub fn writer(self: *Request) Writer {
+        return .{
+            .request = self,
+            .http_writer = self.http_request.writer(),
+            .adapter = self.http_request.writer().adaptToNewApi(),
+        };
     }
 
-    pub fn beginJson(self: *Request) !JsonWriter {
+    pub fn setJson(self: *Request) !void {
         log.debug("- Started JSON request body", .{});
 
         self.http_request.headers.content_type = .{ .override = "application/json" };
 
         try self.http_request.send();
         self.sent = true;
-
-        // return std.json.writeStream(multiWriter(.{ std.io.getStdOut().writer(), self.writer() }).writer(), .{});
-        return std.json.writeStream(self.writer(), .{});
     }
 
-    pub fn beginFormData(self: *Request) !FormDataWriter {
+    pub fn setFormData(self: *Request) !wardrobe.Boundary {
         const allocator = self.arena.allocator();
 
         log.debug("- Started form data request body", .{});
@@ -86,8 +101,7 @@ pub const Request = struct {
         try self.http_request.send();
         self.sent = true;
 
-        // return wardrobe.writeStream(boundary, multiWriter(.{ std.io.getStdOut().writer(), self.writer() }).writer());
-        return wardrobe.writeStream(boundary, self.writer());
+        return boundary;
     }
 
     pub fn fetch(self: *Request) !void {
@@ -124,7 +138,10 @@ pub const Request = struct {
     pub fn readJson(self: *Request, comptime ResponseData: type) !ResponseData {
         const allocator = self.arena.allocator();
 
-        var json_reader = std.json.reader(allocator, self.http_request.reader());
+        var buffer: [4096]u8 = undefined;
+        var new_reader = self.http_request.reader().adaptToNewApi(&buffer);
+
+        var json_reader: std.json.Reader = .init(allocator, &new_reader.new_interface);
         defer json_reader.deinit();
 
         return try std.json.parseFromTokenSourceLeaky(ResponseData, allocator, &json_reader, .{

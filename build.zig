@@ -38,6 +38,11 @@ pub fn build(b: *std.Build) void {
         .root_module = example_mod,
     });
 
+    if (target.result.os.tag == .windows) {
+        example_exe.linkSystemLibrary("ws2_32");
+        example_exe.linkSystemLibrary("crypt32");
+    }
+
     if (optimize == .ReleaseFast or optimize == .ReleaseSmall) {
         example_exe.linkLibC();
     }

@@ -802,7 +802,9 @@ pub const MessageWriter = struct {
         try self.form_writer.beginTextEntry("payload_json");
 
         {
-            var json_writer = std.json.writeStream(self.form_writer.writer(), .{});
+            var new_writer = self.form_writer.writer().adaptToNewApi();
+
+            var json_writer: std.json.Stringify = .{ .writer = &new_writer.new_interface };
             try json_writer.beginObject();
             try message_builder.jsonStringifyInner(&json_writer);
             if (self.options.reference) |reference| {
@@ -810,6 +812,8 @@ pub const MessageWriter = struct {
                 try json_writer.write(reference);
             }
             try json_writer.endObject();
+
+            try new_writer.new_interface.flush();
         }
 
         try self.form_writer.endEntry();
@@ -861,7 +865,9 @@ pub fn messageWriter(self: *Client, channel_id: Snowflake, options: MessageWrite
     });
     errdefer req.deinit();
 
-    const form_writer = try req.beginFormData();
+    var writer = req.writer();
+
+    const form_writer = try writer.formDataWriter();
 
     return .{
         .client = self,
@@ -1093,7 +1099,9 @@ pub fn createInteractionResponse(
     });
     defer req.deinit();
 
-    var jw = try req.beginJson();
+    var writer = req.writer();
+
+    var jw = try writer.jsonWriter();
 
     try jw.beginObject();
     {

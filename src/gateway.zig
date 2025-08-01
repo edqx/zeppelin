@@ -332,7 +332,10 @@ pub fn Client(config: Config) type {
                             .zstd => self.decompressor.reader(),
                         };
 
-                        var json_reader: std.json.Reader(std.json.default_buffer_size, DataReader) = .init(arena, data_reader);
+                        var buffer: [4096]u8 = undefined;
+                        var data_reader_adapter = data_reader.adaptToNewApi(&buffer);
+
+                        var json_reader: std.json.Reader = .init(arena, &data_reader_adapter.new_interface);
 
                         const event = try std.json.parseFromTokenSourceLeaky(gateway_message.Receive, arena, &json_reader, .{
                             .allocate = .alloc_always,
@@ -417,7 +420,7 @@ pub fn Client(config: Config) type {
                 .d = payload,
             };
 
-            const data = try std.json.stringifyAlloc(allocator, send_event, .{});
+            const data = try std.json.Stringify.valueAlloc(allocator, send_event, .{});
             defer allocator.free(data);
 
             try self.websocket_client.write(data);
