@@ -1135,14 +1135,6 @@ pub const ResponseWriter = struct {
         return self.form_writer.writer();
     }
 
-    pub fn beginContent(self: *ResponseWriter) !void {
-        self.assertNoMessageData();
-        try self.form_writer.beginTextEntry("type");
-        try self.writer().print("{d}", .{@intFromEnum(self.type)});
-        try self.form_writer.endEntry();
-        try self.form_writer.beginTextEntry("data.content");
-    }
-
     pub fn beginAttachment(self: *ResponseWriter, file_type: []const u8, file_name: []const u8) !void {
         defer self.num_files += 1;
 

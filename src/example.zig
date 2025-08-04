@@ -37,9 +37,7 @@ const Handler = struct {
 
     pub fn interactionCreate(self: *Handler, interaction_create_event: zeppelin.Event.InteractionCreate) !void {
         var message_writer = try self.client.interactionResponseMessageWriter(interaction_create_event.interaction_id, interaction_create_event.interaction_token);
-        try message_writer.beginContent();
-        try message_writer.writer().print("Pong!", .{});
-        try message_writer.end();
+        try message_writer.write(try .simple(interaction_create_event.arena, "Pong!", .{}));
         try message_writer.create();
     }
 };
