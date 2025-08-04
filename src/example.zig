@@ -36,11 +36,11 @@ const Handler = struct {
     }
 
     pub fn interactionCreate(self: *Handler, interaction_create_event: zeppelin.Event.InteractionCreate) !void {
-        const allocator = interaction_create_event.arena;
-
-        try self.client.createInteractionResponse(interaction_create_event.interaction_id, interaction_create_event.interaction_token, try .simple(allocator, "Pong!", .{}));
-
-        std.log.info("Interaction created", .{});
+        var message_writer = try self.client.interactionResponseMessageWriter(interaction_create_event.interaction_id, interaction_create_event.interaction_token);
+        try message_writer.beginContent();
+        try message_writer.writer().print("Pong!", .{});
+        try message_writer.end();
+        try message_writer.create();
     }
 };
 

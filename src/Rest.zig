@@ -120,19 +120,24 @@ pub const Request = struct {
         return self.http_request.response.status;
     }
 
-    pub fn fetchJson(self: *Request, comptime ResponseData: type) !ResponseData {
+    pub fn fetchAny(self: *Request) !void {
         try self.fetch();
         switch (self.status().class()) {
-            .success => return try self.readJson(ResponseData),
+            .success => {},
             .client_error => {
                 const body = try self.http_request.reader().readAllAlloc(self.arena.allocator(), std.math.maxInt(usize));
                 defer self.arena.allocator().free(body);
 
-                log.err("Request error: {s}", .{body});
+                log.err("Request error: {} {s}", .{ self.status(), body });
                 return error.RequestError;
             },
             else => return error.ResponseError,
         }
+    }
+
+    pub fn fetchJson(self: *Request, comptime ResponseData: type) !ResponseData {
+        try self.fetchAny();
+        return try self.readJson(ResponseData);
     }
 
     pub fn readJson(self: *Request, comptime ResponseData: type) !ResponseData {
@@ -183,7 +188,7 @@ pub fn create(
 
     const allocator = arena.allocator();
 
-    const server_header_buffer = try allocator.alloc(u8, 2048);
+    const server_header_buffer = try allocator.alloc(u8, 8192);
     errdefer allocator.free(server_header_buffer);
 
     const formatted_uri = try std.fmt.allocPrint(allocator, endpoint, parameters);

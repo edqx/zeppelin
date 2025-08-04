@@ -22,6 +22,7 @@ const Rest = @import("Rest.zig");
 
 const Channel = @import("structures/Channel.zig");
 const Guild = @import("structures/Guild.zig");
+const Interaction = @import("structures/Interaction.zig");
 const Message = @import("structures/Message.zig");
 const Role = @import("structures/Role.zig");
 const User = @import("structures/User.zig");
@@ -806,6 +807,7 @@ pub const MessageWriter = struct {
 
             var json_writer: std.json.Stringify = .{ .writer = &new_writer.new_interface };
             try json_writer.beginObject();
+
             try message_builder.jsonStringifyInner(&json_writer);
             if (self.options.reference) |reference| {
                 try json_writer.objectField("message_reference");
@@ -819,7 +821,7 @@ pub const MessageWriter = struct {
         try self.form_writer.endEntry();
     }
 
-    pub fn writer(self: *MessageWriter) Rest.Request.Writer {
+    pub fn writer(self: *MessageWriter) Rest.Request.HttpWriter {
         return self.form_writer.writer();
     }
 
@@ -831,10 +833,7 @@ pub const MessageWriter = struct {
     pub fn beginAttachment(self: *MessageWriter, file_type: []const u8, file_name: []const u8) !void {
         defer self.num_files += 1;
 
-        var buf: [16]u8 = undefined;
-        const entry_name = try std.fmt.bufPrint(&buf, "files[{d}]", .{self.num_files});
-
-        try self.form_writer.beginFileEntry(entry_name, file_type, file_name);
+        try self.form_writer.beginFileEntryFmt("files[{d}]", .{self.num_files}, file_type, file_name);
     }
 
     pub fn writeAttachment(self: *MessageWriter, file_type: []const u8, file_name: []const u8, file_data: []const u8) !void {
@@ -866,7 +865,6 @@ pub fn messageWriter(self: *Client, channel_id: Snowflake, options: MessageWrite
     errdefer req.deinit();
 
     var writer = req.writer();
-
     const form_writer = try writer.formDataWriter();
 
     return .{
@@ -880,8 +878,9 @@ pub fn messageWriter(self: *Client, channel_id: Snowflake, options: MessageWrite
 pub fn createMessage(self: *Client, channel_id: Snowflake, message_builder: MessageBuilder, options: MessageWriter.Options) !*Message {
     defer message_builder.deinit();
     var writer = try self.messageWriter(channel_id, options);
+    defer writer.deinit();
     try writer.write(message_builder);
-    return try writer.create();
+    return try writer.createMessage();
 }
 
 pub fn deleteMessage(self: *Client, channel_id: Snowflake, message_id: Snowflake) !void {
@@ -1087,33 +1086,116 @@ pub fn bulkOverwriteGlobalApplicationCommands(
     _ = application_commands_response;
 }
 
-pub fn createInteractionResponse(
+pub const ResponseWriter = struct {
+    client: *Client,
+
+    req: Rest.Request,
+    form_writer: Rest.Request.FormDataWriter,
+    type: Interaction.ResponseType,
+
+    added_message_data: bool = false,
+    num_files: usize = 0,
+
+    pub fn deinit(self: *ResponseWriter) void {
+        self.req.deinit();
+    }
+
+    fn assertNoMessageData(self: *ResponseWriter) void {
+        std.debug.assert(!self.added_message_data);
+        self.added_message_data = true;
+    }
+
+    pub fn write(self: *ResponseWriter, message_builder: MessageBuilder) !void {
+        self.assertNoMessageData();
+        try self.form_writer.beginTextEntry("payload_json");
+
+        {
+            var new_writer = self.form_writer.writer().adaptToNewApi();
+
+            var json_writer: std.json.Stringify = .{ .writer = &new_writer.new_interface };
+            try json_writer.beginObject();
+
+            {
+                try json_writer.objectField("type");
+                try json_writer.write(@intFromEnum(self.type));
+
+                try json_writer.objectField("data");
+                try json_writer.write(message_builder);
+            }
+
+            try json_writer.endObject();
+
+            try new_writer.new_interface.flush();
+        }
+
+        try self.form_writer.endEntry();
+    }
+
+    pub fn writer(self: *ResponseWriter) Rest.Request.HttpWriter {
+        return self.form_writer.writer();
+    }
+
+    pub fn beginContent(self: *ResponseWriter) !void {
+        self.assertNoMessageData();
+        try self.form_writer.beginTextEntry("type");
+        try self.writer().print("{d}", .{@intFromEnum(self.type)});
+        try self.form_writer.endEntry();
+        try self.form_writer.beginTextEntry("data.content");
+    }
+
+    pub fn beginAttachment(self: *ResponseWriter, file_type: []const u8, file_name: []const u8) !void {
+        defer self.num_files += 1;
+
+        try self.form_writer.beginFileEntryFmt("data.files[{d}]", .{self.num_files}, file_type, file_name);
+    }
+
+    pub fn writeAttachment(self: *ResponseWriter, file_type: []const u8, file_name: []const u8, file_data: []const u8) !void {
+        try self.beginAttachment(file_type, file_name);
+        try self.writer().writeAll(file_data);
+        try self.end();
+    }
+
+    pub fn end(self: *ResponseWriter) !void {
+        try self.form_writer.endEntry();
+    }
+
+    pub fn create(self: *ResponseWriter) !void {
+        try self.form_writer.endEntries();
+        _ = try self.req.fetchJson(std.json.Value);
+    }
+};
+
+pub fn interactionResponseMessageWriter(
+    self: *Client,
+    interaction_id: Snowflake,
+    interaction_token: []const u8,
+) !ResponseWriter {
+    var req = try self.rest_client.create(.POST, endpoints.create_interaction_response ++ "?with_response=true", .{
+        .interaction_id = interaction_id,
+        .interaction_token = interaction_token,
+    });
+    errdefer req.deinit();
+
+    var writer = req.writer();
+    const form_writer = try writer.formDataWriter();
+
+    return .{
+        .client = self,
+        .type = .channel_message_with_source,
+        .req = req,
+        .form_writer = form_writer,
+    };
+}
+
+pub fn createInteractionResponseMessage(
     self: *Client,
     interaction_id: Snowflake,
     interaction_token: []const u8,
     message_builder: MessageBuilder,
 ) !void {
-    var req = try self.rest_client.create(.POST, endpoints.create_interaction_response ++ "?with_response=true", .{
-        .interaction_id = interaction_id,
-        .interaction_token = interaction_token,
-    });
-    defer req.deinit();
-
-    var writer = req.writer();
-
-    var jw = try writer.jsonWriter();
-
-    try jw.beginObject();
-    {
-        try jw.objectField("type");
-        try jw.write(4);
-    }
-    {
-        try jw.objectField("data");
-        try jw.write(message_builder);
-    }
-    try jw.endObject();
-
-    const callback_response = try req.fetchJson(std.json.Value);
-    _ = callback_response;
+    defer message_builder.deinit();
+    var writer = try self.interactionResponseMessageWriter(interaction_id, interaction_token);
+    defer writer.deinit();
+    try writer.write(message_builder);
+    try writer.create();
 }
