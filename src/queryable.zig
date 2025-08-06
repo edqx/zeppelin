@@ -38,7 +38,11 @@ pub fn QueriedFields(comptime Structure: type, comptime fields: []const [:0]cons
         pub fn complete(self: *QueriedFieldsT) bool {
             inline for (queried_fields_const) |field| {
                 @setEvalBranchQuota(10000);
-                if (!self.queried(comptime std.meta.stringToEnum(std.meta.FieldEnum(QueryMap), field.name) orelse unreachable)) return false;
+                const field_tag = comptime std.meta.stringToEnum(
+                    std.meta.FieldEnum(QueryMap),
+                    field.name,
+                ) orelse unreachable;
+                if (!self.queried(field_tag)) return false;
             }
             return true;
         }

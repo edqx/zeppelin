@@ -185,12 +185,12 @@ pub const IntegerInput = struct {
         try jsonStringifyChoices(self.choices, jw);
 
         if (self.min) |min| {
-            try jw.objectField("min");
+            try jw.objectField("min_value");
             try jw.write(min);
         }
 
         if (self.max) |max| {
-            try jw.objectField("max");
+            try jw.objectField("max_value");
             try jw.write(max);
         }
 
@@ -209,8 +209,8 @@ pub const NumberInput = struct {
 
     option: InputOption,
     choices: std.BoundedArray(Choice, 25) = .{},
-    min: ?i64 = null,
-    max: ?i64 = null,
+    min: ?f64 = null,
+    max: ?f64 = null,
     autocomplete: ?bool = null,
 
     pub fn jsonStringify(self: NumberInput, jw: anytype) !void {
@@ -218,12 +218,12 @@ pub const NumberInput = struct {
         try jsonStringifyChoices(self.choices, jw);
 
         if (self.min) |min| {
-            try jw.objectField("min");
+            try jw.objectField("min_value");
             try jw.write(min);
         }
 
         if (self.max) |max| {
-            try jw.objectField("max");
+            try jw.objectField("max_value");
             try jw.write(max);
         }
 

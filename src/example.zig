@@ -35,9 +35,11 @@ const Handler = struct {
         }
     }
 
-    pub fn interactionCreate(self: *Handler, interaction_create_event: zeppelin.Event.InteractionCreate) !void {
-        var message_writer = try self.client.interactionResponseMessageWriter(interaction_create_event.interaction_id, interaction_create_event.interaction_token);
-        try message_writer.write(try .simple(interaction_create_event.arena, "Pong!", .{}));
+    pub fn interactionCreate(self: *Handler, ev: zeppelin.Event.InteractionCreate) !void {
+        _ = self;
+
+        var message_writer = try ev.interaction.responseMessageWriter(ev.token);
+        try message_writer.write(try .simple(ev.arena, "Pong!", .{}));
         try message_writer.create();
     }
 };
@@ -50,15 +52,15 @@ pub fn setup(allocator: std.mem.Allocator, client: *zeppelin.Client) !void {
     };
     defer command.deinit(allocator);
 
-    var kill_sub_command = try command.addOption(allocator, .sub_command, .{
-        .name = "kill",
-        .description = try .fromSlice("kill barney"),
+    var hug_sub_command = try command.addOption(allocator, .sub_command, .{
+        .name = "hug",
+        .description = try .fromSlice("hug barney"),
     });
 
-    _ = try kill_sub_command.addOption(allocator, .integer, .{
+    _ = try hug_sub_command.addOption(allocator, .integer, .{
         .option = .{
-            .name = "violence",
-            .description = try .fromSlice("how much violence to use when killing barney"),
+            .name = "love",
+            .description = try .fromSlice("how much love to use when hugging barney"),
             .required = true,
         },
         .min = 0,
@@ -89,7 +91,7 @@ pub fn main() !void {
         .intents = .all,
     });
 
-    try setup(allocator, &client);
+    // try setup(allocator, &client);
 
     var handler: Handler = .{ .client = &client, .own_user = undefined };
     _ = &handler;

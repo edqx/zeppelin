@@ -22,7 +22,7 @@ const Rest = @import("Rest.zig");
 
 const Channel = @import("structures/Channel.zig");
 const Guild = @import("structures/Guild.zig");
-const Interaction = @import("structures/Interaction.zig");
+const Interaction = @import("structures/ephemeral/Interaction.zig");
 const Message = @import("structures/Message.zig");
 const Role = @import("structures/Role.zig");
 const User = @import("structures/User.zig");
@@ -95,8 +95,8 @@ pub const Event = union(DispatchType) {
 
     pub const InteractionCreate = struct {
         arena: std.mem.Allocator,
-        interaction_id: Snowflake,
-        interaction_token: []const u8,
+        interaction: Interaction,
+        token: []const u8,
     };
 
     ready: Ready,
@@ -440,7 +440,11 @@ fn clearReconnect(self: *Client) void {
     self.maybe_reconnect_options = null;
 }
 
-fn processReadyEvent(self: *Client, arena: std.mem.Allocator, data: gateway_message.payload.Ready) !Event.Ready {
+fn processReadyEvent(
+    self: *Client,
+    arena: std.mem.Allocator,
+    data: gateway_message.payload.Ready,
+) !Event.Ready {
     const user = try self.users.cache.patch(
         self,
         try .resolve(data.user.id),
@@ -461,7 +465,11 @@ fn processReadyEvent(self: *Client, arena: std.mem.Allocator, data: gateway_mess
     return .{ .arena = arena, .user = user };
 }
 
-fn processUserUpdate(self: *Client, arena: std.mem.Allocator, data: gateway_message.payload.UserUpdate) !Event.UserUpdate {
+fn processUserUpdate(
+    self: *Client,
+    arena: std.mem.Allocator,
+    data: gateway_message.payload.UserUpdate,
+) !Event.UserUpdate {
     const user = try self.users.cache.patch(
         self,
         try .resolve(data.id),
@@ -471,7 +479,11 @@ fn processUserUpdate(self: *Client, arena: std.mem.Allocator, data: gateway_mess
     return .{ .arena = arena, .user = user };
 }
 
-fn processGuildCreate(self: *Client, arena: std.mem.Allocator, data: gateway_message.payload.GuildCreate) !Event.GuildCreate {
+fn processGuildCreate(
+    self: *Client,
+    arena: std.mem.Allocator,
+    data: gateway_message.payload.GuildCreate,
+) !Event.GuildCreate {
     const guild = switch (data) {
         .available => |available_data| try self.guilds.cache.patch(
             self,
@@ -493,7 +505,11 @@ fn processGuildCreate(self: *Client, arena: std.mem.Allocator, data: gateway_mes
     return .{ .arena = arena, .guild = guild };
 }
 
-fn processGuildMemberAdd(self: *Client, arena: std.mem.Allocator, data: gateway_message.payload.GuildMemberAdd) !Event.GuildMemberAdd {
+fn processGuildMemberAdd(
+    self: *Client,
+    arena: std.mem.Allocator,
+    data: gateway_message.payload.GuildMemberAdd,
+) !Event.GuildMemberAdd {
     const users_cache = &self.users.cache;
     const guilds_cache = &self.guilds.cache;
 
@@ -516,7 +532,11 @@ fn processGuildMemberAdd(self: *Client, arena: std.mem.Allocator, data: gateway_
     unreachable;
 }
 
-fn processGuildMemberRemove(self: *Client, arena: std.mem.Allocator, data: gateway_message.payload.GuildMemberRemove) !Event.GuildMemberRemove {
+fn processGuildMemberRemove(
+    self: *Client,
+    arena: std.mem.Allocator,
+    data: gateway_message.payload.GuildMemberRemove,
+) !Event.GuildMemberRemove {
     const users_cache = &self.users.cache;
     const guilds_cache = &self.guilds.cache;
 
@@ -530,7 +550,11 @@ fn processGuildMemberRemove(self: *Client, arena: std.mem.Allocator, data: gatew
     return .{ .arena = arena, .guild = guild, .guild_member = guild_member };
 }
 
-pub fn processGuildMemberUpdate(self: *Client, arena: std.mem.Allocator, data: gateway_message.payload.GuildMemberUpdate) !Event.GuildMemberUpdate {
+pub fn processGuildMemberUpdate(
+    self: *Client,
+    arena: std.mem.Allocator,
+    data: gateway_message.payload.GuildMemberUpdate,
+) !Event.GuildMemberUpdate {
     const user = try self.users.cache.patch(self, try .resolve(data.user.id), data.user);
     const guild = try self.guilds.cache.touch(self, try .resolve(data.guild_id));
 
@@ -540,7 +564,11 @@ pub fn processGuildMemberUpdate(self: *Client, arena: std.mem.Allocator, data: g
     return .{ .arena = arena, .guild = guild, .guild_member = guild_member };
 }
 
-fn processMessageCreate(self: *Client, arena: std.mem.Allocator, data: gateway_message.payload.MessageCreate) !Event.MessageCreate {
+fn processMessageCreate(
+    self: *Client,
+    arena: std.mem.Allocator,
+    data: gateway_message.payload.MessageCreate,
+) !Event.MessageCreate {
     const message = try self.messages.cache.patch(
         self,
         try .resolve(data.inner_message.id),
@@ -562,7 +590,11 @@ fn processMessageCreate(self: *Client, arena: std.mem.Allocator, data: gateway_m
     return .{ .arena = arena, .message = message };
 }
 
-fn processMessageDelete(self: *Client, arena: std.mem.Allocator, data: gateway_message.payload.MessageDelete) !Event.MessageDelete {
+fn processMessageDelete(
+    self: *Client,
+    arena: std.mem.Allocator,
+    data: gateway_message.payload.MessageDelete,
+) !Event.MessageDelete {
     const message = try self.messages.cache.touch(self, try .resolve(data.id));
     const channel = try self.channels.cache.touch(self, try .resolve(data.channel_id));
 
@@ -576,7 +608,11 @@ fn processMessageDelete(self: *Client, arena: std.mem.Allocator, data: gateway_m
     return .{ .arena = arena, .message = message };
 }
 
-fn processMessageUpdate(self: *Client, arena: std.mem.Allocator, data: gateway_message.payload.MessageUpdate) !Event.MessageUpdate {
+fn processMessageUpdate(
+    self: *Client,
+    arena: std.mem.Allocator,
+    data: gateway_message.payload.MessageUpdate,
+) !Event.MessageUpdate {
     const message = try self.messages.cache.patch(
         self,
         try .resolve(data.inner_message.id),
@@ -598,12 +634,22 @@ fn processMessageUpdate(self: *Client, arena: std.mem.Allocator, data: gateway_m
     return .{ .arena = arena, .message = message };
 }
 
-fn processInteractionCreate(self: *Client, arena: std.mem.Allocator, data: gateway_message.payload.InteractionCreate) !Event.InteractionCreate {
-    _ = self;
+fn processInteractionCreate(
+    self: *Client,
+    arena: std.mem.Allocator,
+    data: gateway_message.payload.InteractionCreate,
+) !Event.InteractionCreate {
+    var interaction: Interaction = .{
+        .context = self,
+        .id = try .resolve(data.id),
+    };
+
+    try interaction.patch(data);
+
     return .{
         .arena = arena,
-        .interaction_id = try .resolve(data.id),
-        .interaction_token = data.token,
+        .interaction = interaction,
+        .token = data.token,
     };
 }
 
@@ -875,7 +921,12 @@ pub fn messageWriter(self: *Client, channel_id: Snowflake, options: MessageWrite
     };
 }
 
-pub fn createMessage(self: *Client, channel_id: Snowflake, message_builder: MessageBuilder, options: MessageWriter.Options) !*Message {
+pub fn createMessage(
+    self: *Client,
+    channel_id: Snowflake,
+    message_builder: MessageBuilder,
+    options: MessageWriter.Options,
+) !*Message {
     defer message_builder.deinit();
     var writer = try self.messageWriter(channel_id, options);
     defer writer.deinit();
@@ -935,15 +986,20 @@ pub const ReactionAdd = union(enum) {
         id: Snowflake,
     },
 
-    pub fn format(self: ReactionAdd, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: ReactionAdd, writer: *std.io.Writer) !void {
         switch (self) {
             .unicode => |str| try writer.print("{%}", .{@as(std.Uri.Component, .{ .raw = str })}),
-            .custom => |custom_emoji| try writer.print("{s}:{}", .{ custom_emoji.name, custom_emoji.id }),
+            .custom => |custom_emoji| try writer.print("{s}:{f}", .{ custom_emoji.name, custom_emoji.id }),
         }
     }
 };
 
-pub fn createReaction(self: *Client, channel_id: Snowflake, message_id: Snowflake, reaction: ReactionAdd) !void {
+pub fn createReaction(
+    self: *Client,
+    channel_id: Snowflake,
+    message_id: Snowflake,
+    reaction: ReactionAdd,
+) !void {
     var req = try self.rest_client.create(.PUT, endpoints.create_reaction, .{
         .channel_id = channel_id,
         .message_id = message_id,

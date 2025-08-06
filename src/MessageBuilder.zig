@@ -12,7 +12,7 @@ pub const Mention = union(enum) {
         name: []const u8,
         id: Snowflake,
 
-        pub fn format(self: Named, comptime _: []const u8, _: std.fmt.FormatOptions, writer2: anytype) !void {
+        pub fn format(self: Named, writer2: *std.io.Writer) !void {
             try writer2.print("{s}:{}", .{ self.name, self.id });
         }
     };
@@ -43,7 +43,7 @@ pub const Mention = union(enum) {
         timestamp: i64,
         style: ?Style,
 
-        pub fn format(self: Timestamp, comptime _: []const u8, _: std.fmt.FormatOptions, writer2: anytype) !void {
+        pub fn format(self: Timestamp, writer2: *std.io.Writer) !void {
             if (self.style) |style| {
                 try writer2.print("{}:{c}", .{ self.timestamp, style.char() });
             } else {
@@ -61,7 +61,7 @@ pub const Mention = union(enum) {
     timestamp: Timestamp,
     // todo: guild navigation
 
-    pub fn format(self: Mention, comptime _: []const u8, _: std.fmt.FormatOptions, writer2: anytype) !void {
+    pub fn format(self: Mention, writer2: *std.io.Writer) !void {
         try writer2.print("<", .{});
         try writer2.print("{s}", .{switch (self) {
             .user => "@",
@@ -73,7 +73,7 @@ pub const Mention = union(enum) {
             .timestamp => "t:",
         }});
         switch (self) {
-            inline else => |e| try writer2.print("{}", .{e}),
+            inline else => |e| try writer2.print("{f}", .{e}),
         }
         try writer2.print(">", .{});
     }
