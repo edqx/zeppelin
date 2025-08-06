@@ -5,6 +5,7 @@ const QueriedFields = @import("../../queryable.zig").QueriedFields;
 const Client = @import("../../Client.zig");
 
 const MessageBuilder = @import("../../MessageBuilder.zig");
+const CommandType = @import("../../ApplicationCommandBuilder.zig").Type;
 
 pub const Data = @import("../../gateway_message.zig").Interaction;
 
@@ -16,6 +17,24 @@ pub const Type = enum(i32) {
     message_component,
     application_command_autocomplete,
     modal_submit,
+};
+
+pub const ComponentType = enum(i32) {
+    action_row,
+    button,
+    string_select,
+    text_input,
+    user_select,
+    role_select,
+    mentionable_select,
+    channel_select,
+    section,
+    text_display,
+    thumbnail,
+    media_gallery,
+    file,
+    separator,
+    container,
 };
 
 pub const ResponseType = enum(i32) {
@@ -30,13 +49,39 @@ pub const ResponseType = enum(i32) {
     launch_activity = 12,
 };
 
-meta: QueriedFields(Interaction, &.{}) = .none,
+pub const Command = struct {
+    id: Snowflake,
+    name: []const u8,
+    type: CommandType,
+    // todo: options, resolved
+};
+
+pub const Component = struct {
+    custom_id: []const u8,
+    component_type: ComponentType,
+    // todo: values, resolved
+};
+
+pub const ModalSubmit = struct {
+    custom_id: []const u8,
+    components: []Component,
+};
+
+pub const Inner = union(enum) {
+    command: Command,
+    component: Component,
+    modal_submit: ModalSubmit,
+};
+
+meta: QueriedFields(Interaction, &.{"inner"}) = .none,
 
 context: *Client,
 
 id: Snowflake,
 application_id: Snowflake = .nil,
 type: Type = .ping,
+
+inner: Inner = undefined,
 
 pub fn deinit(self: *Interaction) void {
     _ = self;
