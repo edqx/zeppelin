@@ -896,7 +896,8 @@ pub fn createDM(self: *Client, user_id: Snowflake) !*Channel {
     var req = try self.rest_client.create(.POST, endpoints.create_dm, .{});
     errdefer req.deinit();
 
-    var jw = try req.beginJson();
+    var writer = req.writer();
+    var jw = try writer.jsonWriter();
 
     try jw.beginObject();
     {
@@ -1005,7 +1006,8 @@ pub fn startThreadWithoutMessage(
     });
     errdefer req.deinit();
 
-    var jw = try req.beginJson();
+    var writer = req.writer();
+    var jw = try writer.jsonWriter();
 
     try jw.beginObject();
     {
@@ -1046,7 +1048,8 @@ pub fn startThreadFromMessage(
     });
     errdefer req.deinit();
 
-    var jw = try req.beginJson();
+    var writer = req.writer();
+    var jw = try writer.jsonWriter();
 
     try jw.beginObject();
     {
@@ -1072,7 +1075,8 @@ pub fn bulkOverwriteGlobalApplicationCommands(
     });
     defer req.deinit();
 
-    var jw = try req.beginJson();
+    var writer = req.writer();
+    var jw = try writer.jsonWriter();
 
     try jw.beginArray();
     {

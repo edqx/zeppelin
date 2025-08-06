@@ -43,11 +43,27 @@ const Handler = struct {
 };
 
 pub fn setup(allocator: std.mem.Allocator, client: *zeppelin.Client) !void {
-    var command: zeppelin.ApplicationCommandBuilder = .init(allocator, .chat_input);
-    defer command.deinit();
+    var command: zeppelin.ApplicationCommandBuilder = .{
+        .type = .chat_input,
+        .name = "barney",
+        .description = try .fromSlice("This is a barney commany"),
+    };
+    defer command.deinit(allocator);
 
-    try command.name("ping");
-    try command.description("Ping the bot and get response times in milliseconds", .{});
+    var kill_sub_command = try command.addOption(allocator, .sub_command, .{
+        .name = "kill",
+        .description = try .fromSlice("kill barney"),
+    });
+
+    _ = try kill_sub_command.addOption(allocator, .integer, .{
+        .option = .{
+            .name = "violence",
+            .description = try .fromSlice("how much violence to use when killing barney"),
+            .required = true,
+        },
+        .min = 0,
+        .max = 10,
+    });
 
     try client.bulkOverwriteGlobalApplicationCommands(.from(1227783493967413358), &.{command});
 }
@@ -73,7 +89,7 @@ pub fn main() !void {
         .intents = .all,
     });
 
-    // try setup(allocator, &client);
+    try setup(allocator, &client);
 
     var handler: Handler = .{ .client = &client, .own_user = undefined };
     _ = &handler;
