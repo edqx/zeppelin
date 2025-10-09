@@ -174,7 +174,7 @@ pub const ChannelManager = struct {
     }
 
     pub fn fetch(self: *ChannelManager, id: Snowflake) !?*Channel {
-        var req = try self.client.rest_client.create(.GET, endpoints.get_channel, .{
+        var req = try self.client.pooled_rest_client.create(.GET, endpoints.get_channel, .{
             .channel_id = id,
         });
         errdefer req.deinit();
@@ -210,7 +210,7 @@ pub const GuildManager = struct {
     }
 
     pub fn fetch(self: *GuildManager, id: Snowflake) !?*Guild {
-        var req = try self.client.rest_client.create(.GET, endpoints.get_guild, .{
+        var req = try self.client.pooled_rest_client.create(.GET, endpoints.get_guild, .{
             .guild_id = id,
         });
         errdefer req.deinit();
@@ -252,7 +252,7 @@ pub const MessageManager = struct {
     }
 
     pub fn fetch(self: *MessageManager, channel_id: Snowflake, id: Snowflake) !?*Message {
-        var req = try self.client.rest_client.create(.GET, endpoints.get_channel_message, .{
+        var req = try self.client.pooled_rest_client.create(.GET, endpoints.get_channel_message, .{
             .channel_id = channel_id,
             .message_id = id,
         });
@@ -296,7 +296,7 @@ pub const RoleManager = struct {
     pub fn fetch(self: *RoleManager, guild_id: Snowflake, id: Snowflake) !?*Role {
         const guild = try self.client.guilds.cache.touch(self.client, id);
 
-        var req = try self.client.rest_client.create(.GET, endpoints.get_guild_role, .{
+        var req = try self.client.pooled_rest_client.create(.GET, endpoints.get_guild_role, .{
             .guild_id = guild_id,
             .role_id = id,
         });
@@ -332,7 +332,7 @@ pub const UserManager = struct {
     }
 
     pub fn fetch(self: *UserManager, id: Snowflake) !?*User {
-        var req = try self.client.rest_client.create(.GET, endpoints.get_user, .{
+        var req = try self.client.pooled_rest_client.create(.GET, endpoints.get_user, .{
             .user_id = id,
         });
         errdefer req.deinit();
@@ -348,11 +348,80 @@ pub const InitOptions = struct {
     authentication: Authentication,
 };
 
+pub const PooledRest = struct {
+    pub const BufferSize = 4096;
+
+    pub const Request = struct {
+        pooled_rest: *PooledRest,
+        inner: Rest.Request,
+
+        pub fn deinit(self: *Request) void {
+            self.inner.deinit();
+            self.pooled_rest.giveBufferBack(self.inner.out_buffer);
+        }
+
+        pub fn writer(self: *Request) !Rest.Request.Writer {
+            return try self.inner.writer();
+        }
+
+        pub fn fetchSuccess(self: *Request) !void {
+            return try self.inner.fetchSuccess();
+        }
+
+        pub fn fetchJson(self: *Request, comptime ResponseData: type) !ResponseData {
+            return try self.inner.fetchJson(ResponseData);
+        }
+    };
+
+    rest_client: Rest,
+
+    allocator: std.mem.Allocator,
+    dormant_buffer_pool: std.ArrayListUnmanaged([]u8),
+
+    pub fn init(allocator: std.mem.Allocator, authentication: Authentication) !PooledRest {
+        return .{
+            .rest_client = .init(allocator, authentication),
+            .allocator = allocator,
+            .dormant_buffer_pool = try .initCapacity(allocator, 0),
+        };
+    }
+
+    pub fn deinit(self: *PooledRest) void {
+        self.dormant_buffer_pool.deinit(self.allocator);
+        self.rest_client.deinit();
+    }
+
+    fn takeBuffer(self: *PooledRest) ![]u8 {
+        if (self.dormant_buffer_pool.pop()) |buffer| return buffer;
+        const buffer = try self.allocator.alloc(u8, BufferSize);
+        // make space in the dormat buffer so we can safely add this back in Request.deinit and assume there's capacity
+        _ = try self.dormant_buffer_pool.ensureUnusedCapacity(self.allocator, 1);
+        return buffer;
+    }
+
+    fn giveBufferBack(self: *PooledRest, buffer: []u8) void {
+        self.dormant_buffer_pool.appendAssumeCapacity(buffer);
+    }
+
+    pub fn create(
+        self: *PooledRest,
+        method: std.http.Method,
+        comptime endpoint: []const u8,
+        parameters: anytype,
+    ) !Request {
+        const buffer = try self.takeBuffer();
+        return .{
+            .pooled_rest = self,
+            .inner = try self.rest_client.create(method, endpoint, parameters, buffer),
+        };
+    }
+};
+
 allocator: std.mem.Allocator,
 maybe_gateway_client: ?StandardGatewayClient,
 maybe_reconnect_options: ?gateway.Options,
 
-rest_client: Rest,
+pooled_rest_client: PooledRest,
 
 channels: ChannelManager,
 guilds: GuildManager,
@@ -365,7 +434,7 @@ pub fn init(self: *Client, options: InitOptions) !void {
         .allocator = options.allocator,
         .maybe_gateway_client = null,
         .maybe_reconnect_options = null,
-        .rest_client = .init(options.allocator, options.authentication),
+        .pooled_rest_client = try .init(options.allocator, options.authentication),
         .channels = undefined,
         .guilds = undefined,
         .messages = undefined,
@@ -386,7 +455,7 @@ pub fn deinit(self: *Client) void {
     self.messages.deinit();
     self.guilds.deinit();
     self.channels.deinit();
-    self.rest_client.deinit();
+    self.pooled_rest_client.deinit();
     self.clearReconnect();
     if (self.maybe_gateway_client) |*gateway_client| {
         gateway_client.deinit();
@@ -415,7 +484,7 @@ pub fn connectAndLogin(self: *Client, options: gateway.Options) !void {
     try StandardGatewayClient.init(
         &self.maybe_gateway_client.?,
         self.allocator,
-        self.rest_client.authentication.resolve(),
+        self.pooled_rest_client.rest_client.authentication.resolve(),
         options,
     );
     if (try self.maybe_gateway_client.?.connectAndAuthenticate()) |fail_message| {
@@ -760,8 +829,15 @@ pub fn receive(self: *Client, arena: *std.heap.ArenaAllocator) !Event {
 
         const allocator = arena.allocator();
 
+        @compileLog(@typeInfo(@TypeOf(gateway_client.readMessage(allocator))).error_union.error_set || error{});
+
         const message = gateway_client.readMessage(allocator) catch |e| switch (e) {
-            error.TlsConnectionTruncated => {
+            // error.TlsConnectionTruncated => {
+            //     gateway_client.deinit();
+            //     self.maybe_gateway_client = null;
+            //     return error.Disconnected;
+            // },
+            error.Closed => {
                 gateway_client.deinit();
                 self.maybe_gateway_client = null;
                 return error.Disconnected;
@@ -829,7 +905,7 @@ pub const MessageWriter = struct {
     client: *Client,
     options: Options,
 
-    req: Rest.Request,
+    req: PooledRest.Request,
     form_writer: Rest.Request.FormDataWriter,
 
     added_message_data: bool = false,
@@ -905,12 +981,12 @@ pub const MessageWriter = struct {
 };
 
 pub fn messageWriter(self: *Client, channel_id: Snowflake, options: MessageWriter.Options) !MessageWriter {
-    var req = try self.rest_client.create(.POST, endpoints.create_message, .{
+    var req = try self.pooled_rest_client.create(.POST, endpoints.create_message, .{
         .channel_id = channel_id,
     });
     errdefer req.deinit();
 
-    var writer = req.writer();
+    var writer = try req.writer();
     const form_writer = try writer.formDataWriter();
 
     return .{
@@ -935,7 +1011,7 @@ pub fn createMessage(
 }
 
 pub fn deleteMessage(self: *Client, channel_id: Snowflake, message_id: Snowflake) !void {
-    var req = try self.rest_client.create(.DELETE, endpoints.delete_message, .{
+    var req = try self.pooled_rest_client.create(.DELETE, endpoints.delete_message, .{
         .channel_id = channel_id,
         .message_id = message_id,
     });
@@ -944,10 +1020,10 @@ pub fn deleteMessage(self: *Client, channel_id: Snowflake, message_id: Snowflake
 }
 
 pub fn createDM(self: *Client, user_id: Snowflake) !*Channel {
-    var req = try self.rest_client.create(.POST, endpoints.create_dm, .{});
+    var req = try self.pooled_rest_client.create(.POST, endpoints.create_dm, .{});
     errdefer req.deinit();
 
-    var writer = req.writer();
+    var writer = try req.writer();
     var jw = try writer.jsonWriter();
 
     try jw.beginObject();
@@ -957,6 +1033,8 @@ pub fn createDM(self: *Client, user_id: Snowflake) !*Channel {
     }
     try jw.endObject();
 
+    try writer.end();
+
     const channel_response = try req.fetchJson(gateway_message.Channel);
     const channel = try self.channels.cache.patch(self, try .resolve(channel_response.id), channel_response);
     try self.channels.pool.add(channel);
@@ -964,7 +1042,7 @@ pub fn createDM(self: *Client, user_id: Snowflake) !*Channel {
 }
 
 pub fn deleteChannel(self: *Client, channel_id: Snowflake) !void {
-    var req = try self.rest_client.create(.DELETE, endpoints.delete_channel, .{
+    var req = try self.pooled_rest_client.create(.DELETE, endpoints.delete_channel, .{
         .channel_id = channel_id,
     });
     defer req.deinit();
@@ -972,7 +1050,7 @@ pub fn deleteChannel(self: *Client, channel_id: Snowflake) !void {
 }
 
 pub fn triggerTypingIndicator(self: *Client, channel_id: Snowflake) !void {
-    var req = try self.rest_client.create(.POST, endpoints.trigger_typing_indicator, .{
+    var req = try self.pooled_rest_client.create(.POST, endpoints.trigger_typing_indicator, .{
         .channel_id = channel_id,
     });
     defer req.deinit();
@@ -1000,7 +1078,7 @@ pub fn createReaction(
     message_id: Snowflake,
     reaction: ReactionAdd,
 ) !void {
-    var req = try self.rest_client.create(.PUT, endpoints.create_reaction, .{
+    var req = try self.pooled_rest_client.create(.PUT, endpoints.create_reaction, .{
         .channel_id = channel_id,
         .message_id = message_id,
         .emoji_id = reaction,
@@ -1057,12 +1135,12 @@ pub fn startThreadWithoutMessage(
     name: []const u8,
     options: StartThreadOptions,
 ) !*Channel {
-    var req = try self.rest_client.create(.POST, endpoints.start_thread_without_message, .{
+    var req = try self.pooled_rest_client.create(.POST, endpoints.start_thread_without_message, .{
         .channel_id = channel_id,
     });
     errdefer req.deinit();
 
-    var writer = req.writer();
+    var writer = try req.writer();
     var jw = try writer.jsonWriter();
 
     try jw.beginObject();
@@ -1085,6 +1163,8 @@ pub fn startThreadWithoutMessage(
     try options.jsonStringifyInner(&jw);
     try jw.endObject();
 
+    try writer.end();
+
     const channel_response = try req.fetchJson(gateway_message.Channel);
     const channel = try self.channels.cache.patch(self, try .resolve(channel_response.id), channel_response);
     try self.channels.pool.add(channel);
@@ -1098,13 +1178,13 @@ pub fn startThreadFromMessage(
     name: []const u8,
     options: StartThreadOptions,
 ) !*Channel {
-    var req = try self.rest_client.create(.POST, endpoints.start_thread_from_message, .{
+    var req = try self.pooled_rest_client.create(.POST, endpoints.start_thread_from_message, .{
         .channel_id = channel_id,
         .message_id = message_id,
     });
     errdefer req.deinit();
 
-    var writer = req.writer();
+    var writer = try req.writer();
     var jw = try writer.jsonWriter();
 
     try jw.beginObject();
@@ -1114,6 +1194,8 @@ pub fn startThreadFromMessage(
     }
     try options.jsonStringifyInner(&jw);
     try jw.endObject();
+
+    try writer.end();
 
     const channel_response = try req.fetchJson(gateway_message.Channel);
     const channel = try self.channels.cache.patch(self, try .resolve(channel_response.id), channel_response);
@@ -1126,12 +1208,12 @@ pub fn bulkOverwriteGlobalApplicationCommands(
     application_id: Snowflake,
     application_command_builders: []const ApplicationCommandBuilder,
 ) !void {
-    var req = try self.rest_client.create(.PUT, endpoints.bulk_overwrite_global_application_commands, .{
+    var req = try self.pooled_rest_client.create(.PUT, endpoints.bulk_overwrite_global_application_commands, .{
         .application_id = application_id,
     });
     defer req.deinit();
 
-    var writer = req.writer();
+    var writer = try req.writer();
     var jw = try writer.jsonWriter();
 
     try jw.beginArray();
@@ -1142,30 +1224,53 @@ pub fn bulkOverwriteGlobalApplicationCommands(
     }
     try jw.endArray();
 
+    try writer.end();
+
     const application_commands_response = try req.fetchJson(std.json.Value);
     _ = application_commands_response;
 }
 
-pub const ResponseWriter = struct {
+pub const InteractionResponseWriter = struct {
     client: *Client,
+    type: Interaction.ResponseType,
 
     req: Rest.Request,
-    form_writer: Rest.Request.FormDataWriter,
-    type: Interaction.ResponseType,
+    http_writer: Rest.Request.Writer,
+    form_data_writer: Rest.Request.FormDataWriter,
 
     added_message_data: bool = false,
     num_files: usize = 0,
 
-    pub fn deinit(self: *ResponseWriter) void {
+    pub fn init(self: *InteractionResponseWriter, client: *Client, @"type": Interaction.ResponseType, interaction_id: Snowflake, interaction_token: []const u8) !void {
+        self.* = .{
+            .client = client,
+            .req = undefined,
+            .writer = undefined,
+            .form_data_writer = undefined,
+            .type = @"type",
+        };
+        errdefer self.* = undefined;
+
+        self.req = try client.pooled_rest_client.create(.POST, endpoints.create_interaction_response ++ "?with_response=true", .{
+            .interaction_id = interaction_id,
+            .interaction_token = interaction_token,
+        });
+        errdefer self.req.deinit();
+
+        self.http_writer = try self.req.writer();
+        self.form_data_writer = self.writer.formDataWriter();
+    }
+
+    pub fn deinit(self: *InteractionResponseWriter) void {
         self.req.deinit();
     }
 
-    fn assertNoMessageData(self: *ResponseWriter) void {
+    fn assertNoMessageData(self: *InteractionResponseWriter) void {
         std.debug.assert(!self.added_message_data);
         self.added_message_data = true;
     }
 
-    pub fn write(self: *ResponseWriter, message_builder: MessageBuilder) !void {
+    pub fn write(self: *InteractionResponseWriter, message_builder: MessageBuilder) !void {
         self.assertNoMessageData();
         try self.form_writer.beginTextEntry("payload_json");
 
@@ -1191,53 +1296,32 @@ pub const ResponseWriter = struct {
         try self.form_writer.endEntry();
     }
 
-    pub fn writer(self: *ResponseWriter) Rest.Request.HttpWriter {
+    pub fn writer(self: *InteractionResponseWriter) Rest.Request.HttpWriter {
         return self.form_writer.writer();
     }
 
-    pub fn beginAttachment(self: *ResponseWriter, file_type: []const u8, file_name: []const u8) !void {
+    pub fn beginAttachment(self: *InteractionResponseWriter, file_type: []const u8, file_name: []const u8) !void {
         defer self.num_files += 1;
 
         try self.form_writer.beginFileEntryFmt("data.files[{d}]", .{self.num_files}, file_type, file_name);
     }
 
-    pub fn writeAttachment(self: *ResponseWriter, file_type: []const u8, file_name: []const u8, file_data: []const u8) !void {
+    pub fn writeAttachment(self: *InteractionResponseWriter, file_type: []const u8, file_name: []const u8, file_data: []const u8) !void {
         try self.beginAttachment(file_type, file_name);
         try self.writer().writeAll(file_data);
         try self.end();
     }
 
-    pub fn end(self: *ResponseWriter) !void {
+    pub fn end(self: *InteractionResponseWriter) !void {
         try self.form_writer.endEntry();
     }
 
-    pub fn create(self: *ResponseWriter) !void {
+    pub fn create(self: *InteractionResponseWriter) !void {
         try self.form_writer.endEntries();
+        try self.form_.end();
         _ = try self.req.fetchJson(std.json.Value);
     }
 };
-
-pub fn interactionResponseMessageWriter(
-    self: *Client,
-    interaction_id: Snowflake,
-    interaction_token: []const u8,
-) !ResponseWriter {
-    var req = try self.rest_client.create(.POST, endpoints.create_interaction_response ++ "?with_response=true", .{
-        .interaction_id = interaction_id,
-        .interaction_token = interaction_token,
-    });
-    errdefer req.deinit();
-
-    var writer = req.writer();
-    const form_writer = try writer.formDataWriter();
-
-    return .{
-        .client = self,
-        .type = .channel_message_with_source,
-        .req = req,
-        .form_writer = form_writer,
-    };
-}
 
 pub fn createInteractionResponseMessage(
     self: *Client,

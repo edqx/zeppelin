@@ -10,6 +10,25 @@ pub fn anyFieldsSet(s: anytype) bool {
     } else false;
 }
 
+pub fn EnumBitfield(E: type) type {
+    var packed_struct_info: std.builtin.Type.Struct = .{
+        .decls = &.{},
+        .fields = &.{},
+        .is_tuple = false,
+        .layout = .@"packed",
+    };
+    for (@typeInfo(E).@"enum".fields) |field| {
+        packed_struct_info.fields = packed_struct_info.fields ++ .{std.builtin.Type.StructField{
+            .name = field.name,
+            .type = bool,
+            .alignment = 0,
+            .is_comptime = false,
+            .default_value_ptr = &false,
+        }};
+    }
+    return @Type(.{ .@"struct" = packed_struct_info });
+}
+
 pub const Type = enum(i32) {
     chat_input = 1,
     user,
@@ -17,7 +36,7 @@ pub const Type = enum(i32) {
     primary_entry_point,
 };
 
-pub const Context = enum {
+pub const ContextType = enum {
     guild,
     bot_dm,
     private_channel,
@@ -31,23 +50,22 @@ pub const IntegrationType = enum {
 pub const SubCommand = struct {
     pub const Group = struct {
         name: []const u8,
-        description: std.BoundedArray(u8, 100) = .{},
-        sub_commands: std.ArrayListUnmanaged(SubCommand) = .empty,
+        description: std.Io.Writer.Allocating,
+        sub_commands: std.ArrayList(SubCommand),
 
-        pub fn deinit(self: Group, allocator: std.mem.Allocator) void {
+        pub fn deinit(self: Group) void {
             for (self.sub_commands.items) |sub_command| {
-                sub_command.deinit(allocator);
+                sub_command.deinit();
             }
-            var sub_commands_var = self.sub_commands;
-            sub_commands_var.deinit(allocator);
+            self.sub_commands.deinit();
+            self.description.deinit();
         }
 
         pub fn addSubCommand(
             self: *Group,
-            allocator: std.mem.Allocator,
             sub_command: SubCommand,
         ) !*Option {
-            const ptr = try self.sub_commands.addOne(allocator);
+            const ptr = try self.sub_commands.addOne();
             ptr.* = sub_command;
             return &ptr;
         }
@@ -57,7 +75,7 @@ pub const SubCommand = struct {
             try jw.write(self.name);
 
             try jw.objectField("description");
-            try jw.write(self.description.slice());
+            try jw.write(self.description.written());
 
             try jw.objectField("options");
             try jw.beginArray();
@@ -69,24 +87,23 @@ pub const SubCommand = struct {
     };
 
     name: []const u8,
-    description: std.BoundedArray(u8, 100) = .{},
-    options: std.ArrayListUnmanaged(Option) = .{},
+    description: std.Io.Writer.Allocating,
+    options: std.ArrayList(Option),
 
-    pub fn deinit(self: SubCommand, allocator: std.mem.Allocator) void {
+    pub fn deinit(self: SubCommand) void {
         for (self.options.items) |option| {
-            option.deinit(allocator);
+            option.deinit();
         }
-        var options_var = self.options;
-        options_var.deinit(allocator);
+        self.options.deinit();
+        self.description.deinit();
     }
 
     pub fn addOption(
         self: *SubCommand,
-        allocator: std.mem.Allocator,
         comptime option_type: std.meta.Tag(Option),
         option: @FieldType(Option, @tagName(option_type)),
     ) !*@TypeOf(option) {
-        const ptr = try self.options.addOne(allocator);
+        const ptr = try self.options.addOne();
         ptr.* = @unionInit(Option, @tagName(option_type), option);
         return &@field(ptr, @tagName(option_type));
     }
@@ -96,7 +113,7 @@ pub const SubCommand = struct {
         try jw.write(self.name);
 
         try jw.objectField("description");
-        try jw.write(self.description.slice());
+        try jw.write(self.description.written());
 
         try jw.objectField("options");
         try jw.beginArray();
@@ -109,7 +126,7 @@ pub const SubCommand = struct {
 
 pub const InputOption = struct {
     name: []const u8,
-    description: std.BoundedArray(u8, 100) = .{},
+    description: std.Io.Writer.Allocating,
     required: bool,
 
     pub fn jsonStringify(self: InputOption, jw: anytype) !void {
@@ -117,7 +134,7 @@ pub const InputOption = struct {
         try jw.write(self.name);
 
         try jw.objectField("description");
-        try jw.write(self.description.slice());
+        try jw.write(self.description.written());
 
         try jw.objectField("required");
         try jw.write(self.required);
@@ -128,7 +145,7 @@ fn jsonStringifyChoices(choices: anytype, jw: anytype) !void {
     if (choices.len > 0) {
         try jw.objectField("choices");
         try jw.beginArray();
-        for (choices.slice()) |choice| {
+        for (choices) |choice| {
             try jw.write(choice);
         }
         try jw.endArray();
@@ -142,14 +159,14 @@ pub const StringInput = struct {
     };
 
     option: InputOption,
-    choices: std.BoundedArray(Choice, 25) = .{},
+    choices: std.ArrayList(Choice),
     min_length: ?usize = null,
     max_length: ?usize = null,
     autocomplete: ?bool = null,
 
     pub fn jsonStringify(self: StringInput, jw: anytype) !void {
         try jw.write(self.option);
-        try jsonStringifyChoices(self.choices, jw);
+        try jsonStringifyChoices(self.choices.items, jw);
 
         if (self.min_length) |min_length| {
             try jw.objectField("min_length");
@@ -175,14 +192,14 @@ pub const IntegerInput = struct {
     };
 
     option: InputOption,
-    choices: std.BoundedArray(Choice, 25) = .{},
+    choices: std.ArrayList(Choice),
     min: ?i64 = null,
     max: ?i64 = null,
     autocomplete: ?bool = null,
 
     pub fn jsonStringify(self: IntegerInput, jw: anytype) !void {
         try jw.write(self.option);
-        try jsonStringifyChoices(self.choices, jw);
+        try jsonStringifyChoices(self.choices.items, jw);
 
         if (self.min) |min| {
             try jw.objectField("min_value");
@@ -208,14 +225,14 @@ pub const NumberInput = struct {
     };
 
     option: InputOption,
-    choices: std.BoundedArray(Choice, 25) = .{},
+    choices: std.ArrayList(Choice),
     min: ?f64 = null,
     max: ?f64 = null,
     autocomplete: ?bool = null,
 
     pub fn jsonStringify(self: NumberInput, jw: anytype) !void {
         try jw.write(self.option);
-        try jsonStringifyChoices(self.choices, jw);
+        try jsonStringifyChoices(self.choices.items, jw);
 
         if (self.min) |min| {
             try jw.objectField("min_value");
@@ -236,22 +253,18 @@ pub const NumberInput = struct {
 
 pub const ChannelInput = struct {
     option: InputOption,
-    channel_types: std.EnumArray(Channel.Type, bool),
+    channel_types: ?EnumBitfield(Channel.Type),
 
     pub fn jsonStringify(self: ChannelInput, jw: anytype) !void {
         try jw.write(self.option);
 
-        const any_channel_types_set = for (self.channel_types.values) |channel_type| {
-            if (channel_type) break true;
-        } else false;
-
-        if (any_channel_types_set) {
+        if (self.channel_types) |channel_types| {
             try jw.objectField("channel_types");
             try jw.beginArray();
-            var channel_types_var = self.channel_types;
-            var channel_types_iter = channel_types_var.iterator();
-            while (channel_types_iter.next()) |entry| {
-                if (entry.value.*) try jw.write(entry.key);
+            for (@typeInfo(Channel.Type).@"struct".fields) |field| {
+                if (@field(channel_types, field.name)) {
+                    try jw.write(@field(Channel.Type, field.name));
+                }
             }
             try jw.endArray();
         }
@@ -271,10 +284,10 @@ pub const Option = union(enum(i32)) {
     number: NumberInput,
     attachment: InputOption,
 
-    pub fn deinit(self: Option, allocator: std.mem.Allocator) void {
+    pub fn deinit(self: Option) void {
         switch (self) {
             inline else => |option| if (@hasDecl(@TypeOf(option), "deinit"))
-                option.deinit(allocator),
+                option.deinit(),
         }
     }
 
@@ -295,27 +308,29 @@ pub const Option = union(enum(i32)) {
 name: []const u8, // TODO: localisations
 type: Type,
 
-description: std.BoundedArray(u8, 100) = .{}, // TODO: localisations
+description: std.Io.Writer.Allocating,
 
-contexts: ?std.enums.EnumArray(Context, bool) = .initFill(false),
-integration_types: std.enums.EnumArray(IntegrationType, bool) = .initFill(false),
+contexts: ?EnumBitfield(ContextType) = null,
+integrations: ?EnumBitfield(IntegrationType) = null,
 
-options: std.ArrayListUnmanaged(Option) = .empty,
+options: std.ArrayList(Option),
+nsfw: bool = false,
 
-pub fn deinit(self: ApplicationCommandBuilder, allocator: std.mem.Allocator) void {
+pub fn init(allocator: std.mem.Allocator, @"type": Type, name: []const u8) !ApplicationCommandBuilder {
+    return .{
+        .name = name,
+        .type = @"type",
+        .description = try .initCapacity(allocator, 100),
+        .options = .empty,
+    };
+}
+
+pub fn deinit(self: ApplicationCommandBuilder) void {
     for (self.options.items) |option| {
-        option.deinit(allocator);
+        option.deinit();
     }
-    var options_var = self.options;
-    options_var.deinit(allocator);
-}
-
-pub fn descriptionWriter(self: *ApplicationCommandBuilder) std.BoundedArray(u8, 100).Writer {
-    return self.description.writer();
-}
-
-pub fn descriptionFmt(self: *ApplicationCommandBuilder, comptime fmt: []const u8, args: anytype) !void {
-    try self.descriptionWriter().print(fmt, args);
+    self.options.deinit();
+    self.description.deinit();
 }
 
 pub fn addOption(
@@ -336,48 +351,39 @@ pub fn jsonStringify(self: ApplicationCommandBuilder, jw: anytype) !void {
         try jw.write(self.name);
     }
     try jw.objectField("description");
-    try jw.write(self.description.slice());
+    try jw.write(self.description.written());
     {
         try jw.objectField("type");
         try jw.write(@intFromEnum(self.type));
     }
     if (self.contexts) |contexts| {
-        // std.EnumArray.iterator expects a pointer to mutable data,
-        // we don't have that.
-        var contexts_var = contexts;
-        const any_contexts_set = for (contexts.values) |context| {
-            if (context) break true;
-        } else false;
-
-        if (any_contexts_set) {
-            try jw.objectField("contexts");
-            try jw.beginArray();
-            var contexts_iter = contexts_var.iterator();
-            while (contexts_iter.next()) |entry| {
-                if (entry.value.*) try jw.write(entry.key);
+        try jw.objectField("contexts");
+        try jw.beginArray();
+        for (@typeInfo(ContextType).@"struct".fields) |field| {
+            if (@field(contexts, field.name)) {
+                try jw.write(@field(ContextType, field.name));
             }
-            try jw.endArray();
         }
+        try jw.endArray();
     } else {
         try jw.objectField("contexts");
         try jw.write(null);
     }
 
-    const any_integration_types_set = for (self.integration_types.values) |integration_type| {
-        if (integration_type) break true;
-    } else false;
-
-    if (any_integration_types_set) {
-        try jw.objectField("integration_types");
-        try jw.beginArray();
-        // std.EnumArray.iterator expects a pointer to mutable data,
-        // we don't have that.
-        var integration_types_var = self.integration_types;
-        var integration_types = integration_types_var.iterator();
-        while (integration_types.next()) |entry| {
-            if (entry.value.*) try jw.write(entry.key);
+    if (self.integrations) |integrations| {
+        if (integrations) {
+            try jw.objectField("integration_types");
+            try jw.beginArray();
+            for (@typeInfo(IntegrationType).@"struct".fields) |field| {
+                if (@field(integrations, field.name)) {
+                    try jw.write(@field(IntegrationType, field.name));
+                }
+            }
+            try jw.endArray();
         }
-        try jw.endArray();
+    } else {
+        try jw.objectField("integration_types");
+        try jw.write(null);
     }
 
     if (self.options.items.len > 0) {
@@ -388,6 +394,9 @@ pub fn jsonStringify(self: ApplicationCommandBuilder, jw: anytype) !void {
         }
         try jw.endArray();
     }
+
+    try jw.objectField("nsfw");
+    try jw.write(self.nsfw);
 
     try jw.endObject();
 }

@@ -320,22 +320,19 @@ pub fn Client(config: Config) type {
                 switch (message.type) {
                     .text, .binary => {
                         var fbs = switch (config.compression) {
-                            .none => std.io.fixedBufferStream(message.data),
+                            .none => std.Io.Reader.fixed(message.data),
                             .zlib, .zstd => {
                                 try self.compression_fifo.write(message.data);
                             },
                         };
 
                         const data_reader = switch (config.compression) {
-                            .none => fbs.reader(),
+                            .none => &fbs,
                             .zlib => self.decompressor.reader(),
                             .zstd => self.decompressor.reader(),
                         };
 
-                        var buffer: [4096]u8 = undefined;
-                        var data_reader_adapter = data_reader.adaptToNewApi(&buffer);
-
-                        var json_reader: std.json.Reader = .init(arena, &data_reader_adapter.new_interface);
+                        var json_reader: std.json.Reader = .init(arena, data_reader);
 
                         const event = try std.json.parseFromTokenSourceLeaky(gateway_message.Receive, arena, &json_reader, .{
                             .allocate = .alloc_always,

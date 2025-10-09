@@ -39,17 +39,20 @@ pub fn multiWriter(streams: anytype) MultiWriter(@TypeOf(streams)) {
 }
 
 pub const Request = struct {
-    pub const HttpWriter = std.http.Client.Request.Writer;
+    pub const HttpWriter = std.http.BodyWriter;
     pub const FormDataWriter = wardrobe.WriteStream(HttpWriter);
 
     pub const Writer = struct {
         request: *Request,
         http_writer: HttpWriter,
-        adapter: HttpWriter.Adapter,
+
+        pub fn end(self: *Writer) !void {
+            try self.http_writer.end();
+        }
 
         pub fn jsonWriter(self: *Writer) !std.json.Stringify {
             try self.request.setJson();
-            return .{ .writer = &self.adapter.new_interface };
+            return .{ .writer = self.http_writer };
         }
 
         pub fn formDataWriter(self: *Writer) !FormDataWriter {
@@ -59,6 +62,8 @@ pub const Request = struct {
     };
 
     arena: std.heap.ArenaAllocator,
+    out_buffer: []u8,
+
     random: std.Random,
     http_request: std.http.Client.Request,
 
@@ -69,11 +74,10 @@ pub const Request = struct {
         self.arena.deinit();
     }
 
-    pub fn writer(self: *Request) Writer {
+    pub fn writer(self: *Request) !Writer {
         return .{
             .request = self,
-            .http_writer = self.http_request.writer(),
-            .adapter = self.http_request.writer().adaptToNewApi(),
+            .http_writer = try self.http_request.sendBodyUnflushed(self.out_buffer),
         };
     }
 
@@ -83,6 +87,11 @@ pub const Request = struct {
         self.http_request.headers.content_type = .{ .override = "application/json" };
 
         try self.http_request.send();
+        self.sent = true;
+    }
+
+    pub fn send(self: *Request) !void {
+        try self.http_request.sendBodyComplete(&.{});
         self.sent = true;
     }
 
@@ -98,15 +107,13 @@ pub const Request = struct {
 
         self.http_request.headers.content_type = .{ .override = content_type_header };
 
-        try self.http_request.send();
-        self.sent = true;
+        try self.send();
 
         return boundary;
     }
 
     pub fn fetch(self: *Request) !void {
-        if (!self.sent) try self.http_request.send();
-        self.sent = true;
+        if (!self.sent) try self.send();
 
         log.debug("- Request finished", .{});
 
@@ -120,7 +127,7 @@ pub const Request = struct {
         return self.http_request.response.status;
     }
 
-    pub fn fetchAny(self: *Request) !void {
+    pub fn fetchSuccess(self: *Request) !void {
         try self.fetch();
         switch (self.status().class()) {
             .success => {},
@@ -136,7 +143,7 @@ pub const Request = struct {
     }
 
     pub fn fetchJson(self: *Request, comptime ResponseData: type) !ResponseData {
-        try self.fetchAny();
+        try self.fetchSuccess();
         return try self.readJson(ResponseData);
     }
 
@@ -182,6 +189,7 @@ pub fn create(
     method: std.http.Method,
     comptime endpoint: []const u8,
     parameters: anytype,
+    out_buffer: []u8,
 ) !Request {
     var arena: std.heap.ArenaAllocator = .init(self.allocator);
     errdefer arena.deinit();
@@ -194,9 +202,7 @@ pub fn create(
     const formatted_uri = try std.fmt.allocPrint(allocator, endpoint, parameters);
     errdefer allocator.free(formatted_uri);
 
-    var req = try self.http_client.open(method, try std.Uri.parse(formatted_uri), .{
-        .server_header_buffer = server_header_buffer,
-    });
+    var req = try self.http_client.request(method, try std.Uri.parse(formatted_uri), .{});
     if (method.requestHasBody()) {
         req.transfer_encoding = .chunked;
     }
@@ -209,6 +215,7 @@ pub fn create(
     log.info("Request: {s} @ {s}", .{ @tagName(method), formatted_uri });
 
     return .{
+        .out_buffer = out_buffer,
         .arena = arena,
         .random = self.default_prng.random(),
         .http_request = req,

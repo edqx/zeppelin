@@ -79,38 +79,25 @@ pub const Mention = union(enum) {
     }
 };
 
-pub const FieldBuilder = struct {
-    allocator: std.mem.Allocator,
+pub const FieldWriter = struct {
+    name: std.Io.Writer.Allocating,
+    value: std.Io.Writer.Allocating,
+    display_inline: bool = false,
 
-    _name: std.ArrayListUnmanaged(u8) = .empty,
-    _value: std.ArrayListUnmanaged(u8) = .empty,
-    _inline: bool = false,
-
-    pub fn deinit(self: FieldBuilder) void {
-        _ = self;
+    pub fn init(allocator: std.mem.Allocator) !FieldWriter {
+        return .{
+            .name = try .init(allocator),
+            .value = try .init(allocator),
+            .display_inline = false,
+        };
     }
 
-    pub fn titleWriter(self: *FieldBuilder) std.ArrayListUnmanaged(u8).Writer {
-        return self._name.writer(self.allocator);
+    pub fn deinit(self: FieldWriter) void {
+        self.value.deinit();
+        self.name.deinit();
     }
 
-    pub fn title(self: *FieldBuilder, comptime fmt: []const u8, args: anytype) !void {
-        try self.titleWriter().print(fmt, args);
-    }
-
-    pub fn bodyWriter(self: *FieldBuilder) std.ArrayListUnmanaged(u8).Writer {
-        return self._value.writer(self.allocator);
-    }
-
-    pub fn body(self: *FieldBuilder, comptime fmt: []const u8, args: anytype) !void {
-        try self.bodyWriter().print(fmt, args);
-    }
-
-    pub fn displayInline(self: *FieldBuilder) void {
-        self._inline = true;
-    }
-
-    pub fn jsonStringify(self: FieldBuilder, jw: anytype) !void {
+    pub fn jsonStringify(self: FieldWriter, jw: anytype) !void {
         try jw.beginObject();
         {
             try jw.objectField("name");
@@ -155,123 +142,50 @@ pub const EmbedBuilder = struct {
 
     allocator: std.mem.Allocator,
 
-    _title: std.ArrayListUnmanaged(u8) = .empty,
-    _description: std.ArrayListUnmanaged(u8) = .empty,
+    title: std.Io.Writer.Allocating,
+    description: std.Io.Writer.Allocating,
 
-    _url: []const u8 = &.{},
+    url: []const u8 = &.{},
 
-    _timestamp: ?i64 = null,
-    _color: ?Color = null,
+    timestamp: ?i64 = null,
+    color: ?Color = null,
 
-    _footer_text: std.ArrayListUnmanaged(u8) = .empty,
-    _footer_icon_ref: ?ImageRef = null,
+    footer_text: std.Io.Writer.Allocating,
+    footer_icon: ?ImageRef = null,
 
-    _image_ref: ?ImageRef = null,
-    _thumbnail_ref: ?ImageRef = null,
-    _video_url: []const u8 = &.{},
+    image: ?ImageRef = null,
+    thumbnail: ?ImageRef = null,
+    video_url: []const u8 = &.{},
 
-    _author_name: []const u8 = &.{},
-    _author_url: []const u8 = &.{},
-    _author_icon_ref: ?ImageRef = null,
+    author_name: []const u8 = &.{},
+    author_url: []const u8 = &.{},
+    author_icon_ref: ?ImageRef = null,
 
-    _fields: std.BoundedArray(FieldBuilder, 25) = .{},
+    fields: std.ArrayListUnmanaged(FieldWriter) = .{},
+
+    pub fn init(allocator: std.mem.Allocator) !EmbedBuilder {
+        return .{
+            .allocator = allocator,
+            .title = try .init(allocator),
+            .description = try .init(allocator),
+            .footer_text = try .init(allocator),
+        };
+    }
 
     pub fn deinit(self: EmbedBuilder) void {
-        var s = self; // hack to deinit ArrayList without taking pointer
-
-        for (s._fields.slice()) |field_builder| {
-            field_builder.deinit();
+        for (self.fields.items) |field| {
+            field.deinit();
         }
-
-        if (s._author_icon_ref) |ref| ref.deinit(s.allocator);
-        s.allocator.free(s._author_url);
-        s.allocator.free(s._author_name);
-
-        s.allocator.free(s._video_url);
-        if (s._thumbnail_ref) |ref| ref.deinit(s.allocator);
-        if (s._image_ref) |ref| ref.deinit(s.allocator);
-
-        if (s._footer_icon_ref) |ref| ref.deinit(s.allocator);
-        s._footer_text.deinit(s.allocator);
-
-        s.allocator.free(s._url);
-
-        s._description.deinit(s.allocator);
-        s._title.deinit(s.allocator);
+        self.fields.deinit(self.allocator);
     }
 
-    pub fn titleWriter(self: *EmbedBuilder) std.ArrayListUnmanaged(u8).Writer {
-        return self._title.writer(self.allocator);
+    pub fn addOwnedField(self: *EmbedBuilder, field_builder: FieldWriter) !void {
+        try self.fields.append(self.allocator, field_builder);
     }
 
-    pub fn title(self: *EmbedBuilder, comptime fmt: []const u8, args: anytype) !void {
-        try self.titleWriter().print(fmt, args);
-    }
-
-    pub fn descriptionWriter(self: *EmbedBuilder) std.ArrayListUnmanaged(u8).Writer {
-        return self._description.writer(self.allocator);
-    }
-
-    pub fn description(self: *EmbedBuilder, comptime fmt: []const u8, args: anytype) !void {
-        try self.descriptionWriter().print(fmt, args);
-    }
-
-    pub fn url(self: *EmbedBuilder, _url: []const u8) !void {
-        self.allocator.free(self._url);
-        self._url = try self.allocator.dupe(u8, _url);
-    }
-
-    pub fn timestamp(self: *EmbedBuilder, _timestamp: i64) void {
-        self._timestamp = _timestamp;
-    }
-
-    pub fn color(self: *EmbedBuilder, _color: Color) void {
-        self._color = _color;
-    }
-
-    pub fn footerWriter(self: *EmbedBuilder) std.ArrayListUnmanaged(u8).Writer {
-        return self._footer_text.writer(self.allocator);
-    }
-
-    pub fn footerIcon(self: *EmbedBuilder, icon_ref: ImageRef) !void {
-        self._footer_icon_ref.deinit(self.allocator);
-        self._footer_icon_ref = try icon_ref.dupe(self.allocator);
-    }
-
-    pub fn footer(self: *EmbedBuilder, comptime fmt: []const u8, args: anytype, icon_ref: ?ImageRef) !void {
-        try self.footerWriter().print(fmt, args);
-        if (icon_ref) |ref| try self.footerIcon(ref);
-    }
-
-    pub fn image(self: *EmbedBuilder, image_ref: ImageRef) !void {
-        self._image_ref.deinit(self.allocator);
-        self._image_ref = try image_ref.dupe(self.allocator);
-    }
-
-    pub fn thumbnail(self: *EmbedBuilder, image_ref: ImageRef) !void {
-        self._thumbnail_ref.deinit(self.allocator);
-        self._thumbnail_ref = try image_ref.dupe(self.allocator);
-    }
-
-    pub fn video(self: *EmbedBuilder, video_url: []const u8) !void {
-        self.allocator.free(self._video_url);
-        self._video_url = try self.allocator.dupe(u8, video_url);
-    }
-
-    pub fn author(self: *EmbedBuilder, name: []const u8, author_url: ?[]const u8, icon_ref: ?ImageRef) !void {
-        self.allocator.free(self._author_name);
-        self._author_name = try self.allocator.dupe(u8, name);
-        if (author_url) |s| self._author_url = try self.allocator.dupe(u8, s);
-        if (icon_ref) |ref| self._author_icon_ref = try ref.dupe(self.allocator);
-    }
-
-    pub fn addField(self: *EmbedBuilder, field_builder: FieldBuilder) !void {
-        try self._fields.append(field_builder);
-    }
-
-    pub fn field(self: *EmbedBuilder) !*FieldBuilder {
-        const builder = try self._fields.addOne();
-        builder.* = .{ .allocator = self.allocator };
+    pub fn newField(self: *EmbedBuilder) !*FieldWriter {
+        const builder = try self.fields.addOne(self.allocator);
+        builder.* = .init(self.allocator);
         return builder;
     }
 
@@ -281,35 +195,35 @@ pub const EmbedBuilder = struct {
             try jw.objectField("type");
             try jw.write("rich");
         }
-        if (self._title.items.len > 0) {
+        if (self.title.written().len > 0) {
             try jw.objectField("title");
-            try jw.write(self._title.items);
+            try jw.write(self.title.written());
         }
-        if (self._description.items.len > 0) {
+        if (self.description.written().len > 0) {
             try jw.objectField("description");
-            try jw.write(self._description.items);
+            try jw.write(self.description.written());
         }
-        if (self._url.len > 0) {
+        if (self.url.len > 0) {
             try jw.objectField("url");
-            try jw.write(self._url);
+            try jw.write(self.url);
         }
-        if (self._timestamp) |_timestamp| {
-            const dt = datetime.Datetime.fromTimestamp(_timestamp);
+        if (self.timestamp) |timestamp| {
+            const dt = datetime.Datetime.fromTimestamp(timestamp);
             var iso_buf: [64]u8 = undefined;
             const iso_str = dt.formatISO8601Buf(&iso_buf, false) catch unreachable;
             try jw.objectField("timestamp");
             try jw.write(iso_str);
         }
-        if (self._color) |_color| {
+        if (self.color) |color| {
             try jw.objectField("color");
-            try jw.write(_color);
+            try jw.write(color);
         }
-        if (self._footer_text.items.len > 0 or self._footer_icon_ref != null) {
+        if (self.footer_text.written().len > 0 or self.footer_icon != null) {
             try jw.objectField("footer");
             try jw.beginObject();
             {
                 try jw.objectField("text");
-                try jw.write(self._footer_text.items);
+                try jw.write(self.footer_text.written());
             }
             if (self._footer_icon_ref) |ref| {
                 try jw.objectField("icon_url");
@@ -317,7 +231,7 @@ pub const EmbedBuilder = struct {
             }
             try jw.endObject();
         }
-        if (self._image_ref) |ref| {
+        if (self.image) |ref| {
             try jw.objectField("image");
             try jw.beginObject();
             {
@@ -326,7 +240,7 @@ pub const EmbedBuilder = struct {
             }
             try jw.endObject();
         }
-        if (self._thumbnail_ref) |ref| {
+        if (self.thumbnail) |ref| {
             try jw.objectField("thumbnail");
             try jw.beginObject();
             {
@@ -335,25 +249,25 @@ pub const EmbedBuilder = struct {
             }
             try jw.endObject();
         }
-        if (self._video_url.len > 0) {
+        if (self.video_url.len > 0) {
             try jw.objectField("video");
             try jw.beginObject();
             {
                 try jw.objectField("url");
-                try jw.write(self._video_url);
+                try jw.write(self.video_url);
             }
             try jw.endObject();
         }
-        if (self._author_name.len > 0 or self._author_url.len > 0 or self._author_icon_ref != null) {
+        if (self.author_name.len > 0 or self.author_url.len > 0 or self.author_icon_ref != null) {
             try jw.objectField("author");
             try jw.beginObject();
             {
                 try jw.objectField("name");
-                try jw.write(self._author_name);
+                try jw.write(self.author_name);
             }
-            if (self._author_url.len > 0) {
+            if (self.author_url.len > 0) {
                 try jw.objectField("url");
-                try jw.write(self._author_url);
+                try jw.write(self.author_url);
             }
             if (self._author_icon_ref) |ref| {
                 try jw.objectField("icon_url");
@@ -364,8 +278,8 @@ pub const EmbedBuilder = struct {
         {
             try jw.objectField("fields");
             try jw.beginArray();
-            for (self._fields.slice()) |field_builder| {
-                try jw.write(field_builder);
+            for (self.fields.items) |field| {
+                try jw.write(field);
             }
             try jw.endArray();
         }
@@ -375,49 +289,41 @@ pub const EmbedBuilder = struct {
 
 allocator: std.mem.Allocator,
 
-_content: std.ArrayListUnmanaged(u8) = .empty,
-_embeds: std.BoundedArray(EmbedBuilder, 10) = .{},
+content: std.Io.Writer.Allocating,
+embeds: std.ArrayListUnmanaged(EmbedBuilder),
+
+pub fn init(allocator: std.mem.Allocator) MessageBuilder {
+    return .{
+        .allocator = allocator,
+        .content = .init(allocator),
+        .embeds = .empty,
+    };
+}
 
 pub fn simple(allocator: std.mem.Allocator, comptime fmt: []const u8, args: anytype) !MessageBuilder {
-    var builder: MessageBuilder = .{ .allocator = allocator };
+    var builder: MessageBuilder = .init(allocator);
     errdefer builder.deinit();
 
-    try builder.content(fmt, args);
+    try builder.content.writer.print(fmt, args);
 
     return builder;
 }
 
-pub fn deinit(self: MessageBuilder) void {
-    var s = self; // hack to deinit ArrayList without taking pointer
-
-    for (s._embeds.slice()) |embed_builder| {
-        embed_builder.deinit();
-    }
-
-    s._content.deinit(s.allocator);
-
-    s._content = .empty;
-    s._embeds = .{};
+pub fn deinit(self: *MessageBuilder) void {
+    self.embeds.deinit(self.allocator);
+    self.content.deinit();
 }
 
-pub fn contentWriter(self: *MessageBuilder) std.ArrayListUnmanaged(u8).Writer {
-    return self._content.writer(self.allocator);
+pub fn addOwnedEmbed(self: *MessageBuilder, embed_builder: EmbedBuilder) !void {
+    try self.embeds.append(self.allocator, embed_builder);
 }
 
-pub fn content(self: *MessageBuilder, comptime fmt: []const u8, args: anytype) !void {
-    try self.contentWriter().print(fmt, args);
-}
-
-pub fn addEmbed(self: *MessageBuilder, embed_builder: EmbedBuilder) !void {
-    try self._embeds.append(embed_builder);
-}
-
-pub fn embed(self: *MessageBuilder) !*EmbedBuilder {
-    const builder = self._embeds.addOne() catch |e| switch (e) {
+pub fn newEmbed(self: *MessageBuilder) !*EmbedBuilder {
+    const builder = self.embeds.addOne(self.allocator) catch |e| switch (e) {
         error.Overflow => return error.TooManyEmbeds,
         else => return e,
     };
-    builder.* = .{ .allocator = self.allocator };
+    builder.* = .init(self.allocator);
     return builder;
 }
 
@@ -429,7 +335,7 @@ pub fn jsonStringifyInner(self: MessageBuilder, jw: anytype) !void {
     {
         try jw.objectField("embeds");
         try jw.beginArray();
-        for (self._embeds.slice()) |embed_builder| {
+        for (self.embeds.items) |embed_builder| {
             try jw.write(embed_builder);
         }
         try jw.endArray();
