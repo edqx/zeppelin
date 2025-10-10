@@ -51,7 +51,7 @@ pub const Request = struct {
         }
 
         pub fn json(self: *Writer) !std.json.Stringify {
-            return .{ .writer = self.http_writer };
+            return .{ .writer = &self.http_writer.writer };
         }
 
         pub fn formData(self: *Writer, boundary: wardrobe.Boundary) !FormDataBuilder {
@@ -82,10 +82,16 @@ pub const Request = struct {
         };
     }
 
+    pub fn sendEmpty(self: *Request) !void {
+        std.debug.assert(!self.sent);
+        defer self.sent = true;
+        try self.http_request.sendBodyComplete(&.{});
+    }
+
     pub fn ensureHeadersSent(self: *Request) !HttpWriter {
         std.debug.assert(!self.sent);
         defer self.sent = true;
-        return try self.http_request.sendBodyUnflushed(&.{});
+        return try self.http_request.sendBody(&.{});
     }
 
     pub fn setJson(self: *Request) !void {
@@ -112,8 +118,15 @@ pub const Request = struct {
     }
 
     pub fn fetch(self: *Request) !std.http.Client.Response {
+        if (!self.sent) {
+            try self.http_request.sendBodiless();
+            self.sent = true;
+        }
+
         std.debug.assert(self.sent);
         log.debug("- Request finished", .{});
+
+        try self.http_request.connection.?.flush();
 
         const response = try self.http_request.receiveHead(&.{});
 
@@ -132,7 +145,7 @@ pub const Request = struct {
                 var decompress_buffer: [std.compress.flate.max_window_len]u8 = undefined;
                 const body_reader = response.readerDecompressing(&buffer, &decompress, &decompress_buffer);
 
-                const body_data = try body_reader.readAlloc(self.arena.allocator(), 8 * 1024);
+                const body_data = try body_reader.allocRemaining(self.arena.allocator(), @enumFromInt(8 * 1024));
                 defer self.arena.allocator().free(body_data);
 
                 log.err("Request error: {} {s}", .{ response.head.status, body_data });

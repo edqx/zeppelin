@@ -29,6 +29,7 @@ const Handler = struct {
         if (!message.meta.queried(.member)) return;
 
         if (std.mem.startsWith(u8, message.content, "!!type")) {
+            try message.createReaction(.{ .unicode = "❤️" });
             _ = try message.createReplyMessage(try .simple(allocator, "Your message was created at {}", .{message.created_at}), .{});
         }
     }

@@ -364,6 +364,10 @@ pub const PooledRest = struct {
             return self.inner.getWriter();
         }
 
+        pub fn sendEmpty(self: *Request) !void {
+            return self.inner.sendEmpty();
+        }
+
         pub fn setJson(self: *Request) !void {
             return try self.inner.setJson();
         }
@@ -372,7 +376,7 @@ pub const PooledRest = struct {
             return try self.inner.setFormData();
         }
 
-        pub fn fetchSuccess(self: *Request) !void {
+        pub fn fetchSuccess(self: *Request) !std.http.Client.Response {
             return try self.inner.fetchSuccess();
         }
 
@@ -962,8 +966,6 @@ pub const MessageWriter = struct {
                 try json_writer.write(reference);
             }
             try json_writer.endObject();
-
-            try self.form_data_builder.writer.flush();
         }
 
         try self.form_data_builder.endEntry();
@@ -1074,9 +1076,12 @@ pub const ReactionAdd = union(enum) {
         id: Snowflake,
     },
 
-    pub fn format(self: ReactionAdd, writer: *std.io.Writer) !void {
+    pub fn format(self: ReactionAdd, writer: *std.Io.Writer) !void {
         switch (self) {
-            .unicode => |str| try writer.print("{%}", .{@as(std.Uri.Component, .{ .raw = str })}),
+            .unicode => |str| {
+                const component: std.Uri.Component = .{ .raw = str };
+                try component.formatEscaped(writer);
+            },
             .custom => |custom_emoji| try writer.print("{s}:{f}", .{ custom_emoji.name, custom_emoji.id }),
         }
     }
@@ -1094,7 +1099,8 @@ pub fn createReaction(
         .emoji_id = reaction,
     });
     defer req.deinit();
-    try req.fetch();
+    try req.sendEmpty();
+    _ = try req.fetchSuccess();
 }
 
 pub const StartThreadOptions = struct {
@@ -1325,10 +1331,10 @@ pub const InteractionResponseWriter = struct {
     pub fn writeAttachment(self: *InteractionResponseWriter, file_type: []const u8, file_name: []const u8, file_data: []const u8) !void {
         try self.beginAttachment(file_type, file_name);
         try self.writer().writeAll(file_data);
-        try self.end();
+        try self.endAttachment();
     }
 
-    pub fn end(self: *InteractionResponseWriter) !void {
+    pub fn endAttachment(self: *InteractionResponseWriter) !void {
         try self.form_data_builder.endEntry();
     }
 
