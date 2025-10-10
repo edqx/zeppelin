@@ -360,8 +360,16 @@ pub const PooledRest = struct {
             self.pooled_rest.giveBufferBack(self.inner.out_buffer);
         }
 
-        pub fn writer(self: *Request) !Rest.Request.Writer {
-            return try self.inner.writer();
+        pub fn getWriter(self: *Request) !Rest.Request.Writer {
+            return self.inner.getWriter();
+        }
+
+        pub fn setJson(self: *Request) !void {
+            return try self.inner.setJson();
+        }
+
+        pub fn setFormData(self: *Request) !wardrobe.Boundary {
+            return try self.inner.setFormData();
         }
 
         pub fn fetchSuccess(self: *Request) !void {
@@ -829,8 +837,6 @@ pub fn receive(self: *Client, arena: *std.heap.ArenaAllocator) !Event {
 
         const allocator = arena.allocator();
 
-        @compileLog(@typeInfo(@TypeOf(gateway_client.readMessage(allocator))).error_union.error_set || error{});
-
         const message = gateway_client.readMessage(allocator) catch |e| switch (e) {
             // error.TlsConnectionTruncated => {
             //     gateway_client.deinit();
@@ -906,10 +912,32 @@ pub const MessageWriter = struct {
     options: Options,
 
     req: PooledRest.Request,
-    form_writer: Rest.Request.FormDataWriter,
+    http_writer: Rest.Request.Writer,
+    form_data_builder: Rest.Request.FormDataBuilder,
 
     added_message_data: bool = false,
     num_files: usize = 0,
+
+    pub fn init(self: *MessageWriter, client: *Client, channel_id: Snowflake, options: Options) !void {
+        self.* = .{
+            .client = client,
+            .options = options,
+            .req = undefined,
+            .http_writer = undefined,
+            .form_data_builder = undefined,
+        };
+        errdefer self.* = undefined;
+
+        self.req = try client.pooled_rest_client.create(.POST, endpoints.create_message, .{
+            .channel_id = channel_id,
+        });
+        errdefer self.req.deinit();
+
+        const boundary = try self.req.setFormData();
+
+        self.http_writer = try self.req.getWriter();
+        self.form_data_builder = try self.http_writer.formData(boundary);
+    }
 
     pub fn deinit(self: *MessageWriter) void {
         self.req.deinit();
@@ -922,12 +950,10 @@ pub const MessageWriter = struct {
 
     pub fn write(self: *MessageWriter, message_builder: MessageBuilder) !void {
         self.assertNoMessageData();
-        try self.form_writer.beginTextEntry("payload_json");
+        try self.form_data_builder.beginTextEntry("payload_json");
 
         {
-            var new_writer = self.form_writer.writer().adaptToNewApi();
-
-            var json_writer: std.json.Stringify = .{ .writer = &new_writer.new_interface };
+            var json_writer: std.json.Stringify = .{ .writer = self.form_data_builder.writer };
             try json_writer.beginObject();
 
             try message_builder.jsonStringifyInner(&json_writer);
@@ -937,25 +963,21 @@ pub const MessageWriter = struct {
             }
             try json_writer.endObject();
 
-            try new_writer.new_interface.flush();
+            try self.form_data_builder.writer.flush();
         }
 
-        try self.form_writer.endEntry();
-    }
-
-    pub fn writer(self: *MessageWriter) Rest.Request.HttpWriter {
-        return self.form_writer.writer();
+        try self.form_data_builder.endEntry();
     }
 
     pub fn beginContent(self: *MessageWriter) !void {
         self.assertNoMessageData();
-        try self.form_writer.beginTextEntry("content");
+        try self.form_data_builder.beginTextEntry("content");
     }
 
     pub fn beginAttachment(self: *MessageWriter, file_type: []const u8, file_name: []const u8) !void {
         defer self.num_files += 1;
 
-        try self.form_writer.beginFileEntryFmt("files[{d}]", .{self.num_files}, file_type, file_name);
+        try self.form_data_builder.beginFileEntryFmt("files[{d}]", .{self.num_files}, file_type, file_name);
     }
 
     pub fn writeAttachment(self: *MessageWriter, file_type: []const u8, file_name: []const u8, file_data: []const u8) !void {
@@ -965,11 +987,12 @@ pub const MessageWriter = struct {
     }
 
     pub fn end(self: *MessageWriter) !void {
-        try self.form_writer.endEntry();
+        try self.form_data_builder.endEntry();
     }
 
     pub fn create(self: *MessageWriter) !*Message {
-        try self.form_writer.endEntries();
+        try self.form_data_builder.endEntries();
+        try self.http_writer.end();
         const message_response = try self.req.fetchJson(gateway_message.Message);
         return try self.client.messages.cache.patch(self.client, try .resolve(message_response.id), .{
             .base = message_response,
@@ -980,34 +1003,19 @@ pub const MessageWriter = struct {
     }
 };
 
-pub fn messageWriter(self: *Client, channel_id: Snowflake, options: MessageWriter.Options) !MessageWriter {
-    var req = try self.pooled_rest_client.create(.POST, endpoints.create_message, .{
-        .channel_id = channel_id,
-    });
-    errdefer req.deinit();
-
-    var writer = try req.writer();
-    const form_writer = try writer.formDataWriter();
-
-    return .{
-        .client = self,
-        .options = options,
-        .req = req,
-        .form_writer = form_writer,
-    };
-}
-
 pub fn createMessage(
     self: *Client,
     channel_id: Snowflake,
     message_builder: MessageBuilder,
     options: MessageWriter.Options,
 ) !*Message {
-    defer message_builder.deinit();
-    var writer = try self.messageWriter(channel_id, options);
+    var message_builder_var = message_builder;
+    defer message_builder_var.deinit();
+    var writer: MessageWriter = undefined;
+    try writer.init(self, channel_id, options);
     defer writer.deinit();
-    try writer.write(message_builder);
-    return try writer.createMessage();
+    try writer.write(message_builder_var);
+    return try writer.create();
 }
 
 pub fn deleteMessage(self: *Client, channel_id: Snowflake, message_id: Snowflake) !void {
@@ -1023,8 +1031,10 @@ pub fn createDM(self: *Client, user_id: Snowflake) !*Channel {
     var req = try self.pooled_rest_client.create(.POST, endpoints.create_dm, .{});
     errdefer req.deinit();
 
-    var writer = try req.writer();
-    var jw = try writer.jsonWriter();
+    try req.setJson();
+
+    var writer = try req.getWriter();
+    var jw = try writer.json();
 
     try jw.beginObject();
     {
@@ -1140,8 +1150,10 @@ pub fn startThreadWithoutMessage(
     });
     errdefer req.deinit();
 
-    var writer = try req.writer();
-    var jw = try writer.jsonWriter();
+    try req.setJson();
+
+    var writer = try req.getWriter();
+    var jw = try writer.json();
 
     try jw.beginObject();
     {
@@ -1184,8 +1196,10 @@ pub fn startThreadFromMessage(
     });
     errdefer req.deinit();
 
-    var writer = try req.writer();
-    var jw = try writer.jsonWriter();
+    try req.setJson();
+
+    var writer = try req.getWriter();
+    var jw = try writer.json();
 
     try jw.beginObject();
     {
@@ -1213,8 +1227,10 @@ pub fn bulkOverwriteGlobalApplicationCommands(
     });
     defer req.deinit();
 
-    var writer = try req.writer();
-    var jw = try writer.jsonWriter();
+    try req.setJson();
+
+    var writer = try req.getWriter();
+    var jw = try writer.json();
 
     try jw.beginArray();
     {
@@ -1234,9 +1250,9 @@ pub const InteractionResponseWriter = struct {
     client: *Client,
     type: Interaction.ResponseType,
 
-    req: Rest.Request,
+    req: PooledRest.Request,
     http_writer: Rest.Request.Writer,
-    form_data_writer: Rest.Request.FormDataWriter,
+    form_data_builder: Rest.Request.FormDataBuilder,
 
     added_message_data: bool = false,
     num_files: usize = 0,
@@ -1245,8 +1261,8 @@ pub const InteractionResponseWriter = struct {
         self.* = .{
             .client = client,
             .req = undefined,
-            .writer = undefined,
-            .form_data_writer = undefined,
+            .http_writer = undefined,
+            .form_data_builder = undefined,
             .type = @"type",
         };
         errdefer self.* = undefined;
@@ -1257,8 +1273,10 @@ pub const InteractionResponseWriter = struct {
         });
         errdefer self.req.deinit();
 
-        self.http_writer = try self.req.writer();
-        self.form_data_writer = self.writer.formDataWriter();
+        const boundary = try self.req.setFormData();
+
+        self.http_writer = try self.req.getWriter();
+        self.form_data_builder = try self.http_writer.formData(boundary);
     }
 
     pub fn deinit(self: *InteractionResponseWriter) void {
@@ -1272,12 +1290,10 @@ pub const InteractionResponseWriter = struct {
 
     pub fn write(self: *InteractionResponseWriter, message_builder: MessageBuilder) !void {
         self.assertNoMessageData();
-        try self.form_writer.beginTextEntry("payload_json");
+        try self.form_data_builder.beginTextEntry("payload_json");
 
         {
-            var new_writer = self.form_writer.writer().adaptToNewApi();
-
-            var json_writer: std.json.Stringify = .{ .writer = &new_writer.new_interface };
+            var json_writer: std.json.Stringify = .{ .writer = self.form_data_builder.writer };
             try json_writer.beginObject();
 
             {
@@ -1290,20 +1306,20 @@ pub const InteractionResponseWriter = struct {
 
             try json_writer.endObject();
 
-            try new_writer.new_interface.flush();
+            try self.form_data_builder.writer.flush();
         }
 
-        try self.form_writer.endEntry();
+        try self.form_data_builder.endEntry();
     }
 
     pub fn writer(self: *InteractionResponseWriter) Rest.Request.HttpWriter {
-        return self.form_writer.writer();
+        return self.form_data_builder.writer();
     }
 
     pub fn beginAttachment(self: *InteractionResponseWriter, file_type: []const u8, file_name: []const u8) !void {
         defer self.num_files += 1;
 
-        try self.form_writer.beginFileEntryFmt("data.files[{d}]", .{self.num_files}, file_type, file_name);
+        try self.form_data_builder.beginFileEntryFmt("data.files[{d}]", .{self.num_files}, file_type, file_name);
     }
 
     pub fn writeAttachment(self: *InteractionResponseWriter, file_type: []const u8, file_name: []const u8, file_data: []const u8) !void {
@@ -1313,12 +1329,12 @@ pub const InteractionResponseWriter = struct {
     }
 
     pub fn end(self: *InteractionResponseWriter) !void {
-        try self.form_writer.endEntry();
+        try self.form_data_builder.endEntry();
     }
 
     pub fn create(self: *InteractionResponseWriter) !void {
-        try self.form_writer.endEntries();
-        try self.form_.end();
+        try self.form_data_builder.endEntries();
+        try self.http_writer.end();
         _ = try self.req.fetchJson(std.json.Value);
     }
 };
@@ -1329,8 +1345,10 @@ pub fn createInteractionResponseMessage(
     interaction_token: []const u8,
     message_builder: MessageBuilder,
 ) !void {
-    defer message_builder.deinit();
-    var writer = try self.interactionResponseMessageWriter(interaction_id, interaction_token);
+    var message_builder_var = message_builder;
+    defer message_builder_var.deinit();
+    var writer: InteractionResponseWriter = undefined;
+    try writer.init(self, .channel_message_with_source, interaction_id, interaction_token);
     defer writer.deinit();
     try writer.write(message_builder);
     try writer.create();

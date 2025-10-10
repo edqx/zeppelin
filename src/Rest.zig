@@ -40,7 +40,7 @@ pub fn multiWriter(streams: anytype) MultiWriter(@TypeOf(streams)) {
 
 pub const Request = struct {
     pub const HttpWriter = std.http.BodyWriter;
-    pub const FormDataWriter = wardrobe.WriteStream(HttpWriter);
+    pub const FormDataBuilder = wardrobe.Builder;
 
     pub const Writer = struct {
         request: *Request,
@@ -50,14 +50,15 @@ pub const Request = struct {
             try self.http_writer.end();
         }
 
-        pub fn jsonWriter(self: *Writer) !std.json.Stringify {
-            try self.request.setJson();
+        pub fn json(self: *Writer) !std.json.Stringify {
             return .{ .writer = self.http_writer };
         }
 
-        pub fn formDataWriter(self: *Writer) !FormDataWriter {
-            const boundary = try self.request.setFormData();
-            return wardrobe.writeStream(boundary, self.http_writer);
+        pub fn formData(self: *Writer, boundary: wardrobe.Boundary) !FormDataBuilder {
+            return .{
+                .boundary = boundary,
+                .writer = &self.http_writer.writer,
+            };
         }
     };
 
@@ -74,68 +75,67 @@ pub const Request = struct {
         self.arena.deinit();
     }
 
-    pub fn writer(self: *Request) !Writer {
+    pub fn getWriter(self: *Request) !Writer {
         return .{
             .request = self,
-            .http_writer = try self.http_request.sendBodyUnflushed(self.out_buffer),
+            .http_writer = try self.ensureHeadersSent(),
         };
     }
 
+    pub fn ensureHeadersSent(self: *Request) !HttpWriter {
+        std.debug.assert(!self.sent);
+        defer self.sent = true;
+        return try self.http_request.sendBodyUnflushed(&.{});
+    }
+
     pub fn setJson(self: *Request) !void {
+        std.debug.assert(!self.sent);
         log.debug("- Started JSON request body", .{});
 
         self.http_request.headers.content_type = .{ .override = "application/json" };
-
-        try self.http_request.send();
-        self.sent = true;
-    }
-
-    pub fn send(self: *Request) !void {
-        try self.http_request.sendBodyComplete(&.{});
-        self.sent = true;
     }
 
     pub fn setFormData(self: *Request) !wardrobe.Boundary {
+        std.debug.assert(!self.sent);
+
         const allocator = self.arena.allocator();
 
         log.debug("- Started form data request body", .{});
 
-        const boundary: wardrobe.Boundary = .entropy("ZeppelinBoundary", self.random);
+        const boundary: wardrobe.Boundary = .fromEntropy("ZeppelinBoundary", self.random);
 
-        const content_type_header = try allocator.dupe(u8, boundary.contentType());
+        const content_type_header = try allocator.dupe(u8, boundary.toContentType());
         errdefer allocator.free(content_type_header);
 
         self.http_request.headers.content_type = .{ .override = content_type_header };
-
-        try self.send();
-
         return boundary;
     }
 
-    pub fn fetch(self: *Request) !void {
-        if (!self.sent) try self.send();
-
+    pub fn fetch(self: *Request) !std.http.Client.Response {
+        std.debug.assert(self.sent);
         log.debug("- Request finished", .{});
 
-        try self.http_request.finish();
-        try self.http_request.wait();
+        const response = try self.http_request.receiveHead(&.{});
 
-        log.debug("- Response received, code: {s} {s} ({})", .{ @tagName(self.status().class()), @tagName(self.status()), @intFromEnum(self.status()) });
+        log.debug("- Response received, code: {s} {s} ({})", .{ @tagName(response.head.status.class()), @tagName(response.head.status), @intFromEnum(response.head.status) });
+
+        return response;
     }
 
-    pub fn status(self: *Request) std.http.Status {
-        return self.http_request.response.status;
-    }
-
-    pub fn fetchSuccess(self: *Request) !void {
-        try self.fetch();
-        switch (self.status().class()) {
-            .success => {},
+    pub fn fetchSuccess(self: *Request) !std.http.Client.Response {
+        var response = try self.fetch();
+        switch (response.head.status.class()) {
+            .success => return response,
             .client_error => {
-                const body = try self.http_request.reader().readAllAlloc(self.arena.allocator(), std.math.maxInt(usize));
-                defer self.arena.allocator().free(body);
+                var decompress: std.http.Decompress = undefined;
+                var buffer: [1024]u8 = undefined;
+                var decompress_buffer: [std.compress.flate.max_window_len]u8 = undefined;
+                const body_reader = response.readerDecompressing(&buffer, &decompress, &decompress_buffer);
 
-                log.err("Request error: {} {s}", .{ self.status(), body });
+                const body_data = try body_reader.readAlloc(self.arena.allocator(), 8 * 1024);
+                defer self.arena.allocator().free(body_data);
+
+                log.err("Request error: {} {s}", .{ response.head.status, body_data });
                 return error.RequestError;
             },
             else => return error.ResponseError,
@@ -143,17 +143,19 @@ pub const Request = struct {
     }
 
     pub fn fetchJson(self: *Request, comptime ResponseData: type) !ResponseData {
-        try self.fetchSuccess();
-        return try self.readJson(ResponseData);
+        var response = try self.fetchSuccess();
+        return try self.readJson(&response, ResponseData);
     }
 
-    pub fn readJson(self: *Request, comptime ResponseData: type) !ResponseData {
+    pub fn readJson(self: *Request, response: *std.http.Client.Response, comptime ResponseData: type) !ResponseData {
         const allocator = self.arena.allocator();
 
-        var buffer: [4096]u8 = undefined;
-        var new_reader = self.http_request.reader().adaptToNewApi(&buffer);
+        var decompress: std.http.Decompress = undefined;
+        var buffer: [1024]u8 = undefined;
+        var decompress_buffer: [std.compress.flate.max_window_len]u8 = undefined;
+        const body_reader = response.readerDecompressing(&buffer, &decompress, &decompress_buffer);
 
-        var json_reader: std.json.Reader = .init(allocator, &new_reader.new_interface);
+        var json_reader: std.json.Reader = .init(allocator, body_reader);
         defer json_reader.deinit();
 
         return try std.json.parseFromTokenSourceLeaky(ResponseData, allocator, &json_reader, .{

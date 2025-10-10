@@ -42,7 +42,7 @@ pub fn EventPool(comptime Handler: type) type {
             self.dispatchThreadImpl(arena, event) catch |err| {
                 std.log.err("{s}", .{@errorName(err)});
                 if (@errorReturnTrace()) |trace| {
-                    std.debug.dumpStackTrace(trace.*);
+                    std.debug.dumpStackTrace(trace);
                 }
             };
         }

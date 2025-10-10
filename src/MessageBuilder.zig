@@ -101,15 +101,15 @@ pub const FieldWriter = struct {
         try jw.beginObject();
         {
             try jw.objectField("name");
-            try jw.write(self._name.items);
+            try jw.write(self.name.writer.buffered());
         }
         {
             try jw.objectField("value");
-            try jw.write(self._value.items);
+            try jw.write(self.value.writer.buffered());
         }
-        if (self._inline) {
+        if (self.display_inline) {
             try jw.objectField("inline");
-            try jw.write(self._inline);
+            try jw.write(self.display_inline);
         }
         try jw.endObject();
     }
@@ -159,7 +159,7 @@ pub const EmbedBuilder = struct {
 
     author_name: []const u8 = &.{},
     author_url: []const u8 = &.{},
-    author_icon_ref: ?ImageRef = null,
+    author_icon: ?ImageRef = null,
 
     fields: std.ArrayListUnmanaged(FieldWriter) = .{},
 
@@ -195,13 +195,13 @@ pub const EmbedBuilder = struct {
             try jw.objectField("type");
             try jw.write("rich");
         }
-        if (self.title.written().len > 0) {
+        if (self.title.writer.buffered().len > 0) {
             try jw.objectField("title");
-            try jw.write(self.title.written());
+            try jw.write(self.title.writer.buffered());
         }
-        if (self.description.written().len > 0) {
+        if (self.description.writer.buffered().len > 0) {
             try jw.objectField("description");
-            try jw.write(self.description.written());
+            try jw.write(self.description.writer.buffered());
         }
         if (self.url.len > 0) {
             try jw.objectField("url");
@@ -218,14 +218,14 @@ pub const EmbedBuilder = struct {
             try jw.objectField("color");
             try jw.write(color);
         }
-        if (self.footer_text.written().len > 0 or self.footer_icon != null) {
+        if (self.footer_text.writer.buffered().len > 0 or self.footer_icon != null) {
             try jw.objectField("footer");
             try jw.beginObject();
             {
                 try jw.objectField("text");
-                try jw.write(self.footer_text.written());
+                try jw.write(self.footer_text.writer.buffered());
             }
-            if (self._footer_icon_ref) |ref| {
+            if (self.footer_icon) |ref| {
                 try jw.objectField("icon_url");
                 try jw.write(ref);
             }
@@ -258,7 +258,7 @@ pub const EmbedBuilder = struct {
             }
             try jw.endObject();
         }
-        if (self.author_name.len > 0 or self.author_url.len > 0 or self.author_icon_ref != null) {
+        if (self.author_name.len > 0 or self.author_url.len > 0 or self.author_icon != null) {
             try jw.objectField("author");
             try jw.beginObject();
             {
@@ -269,7 +269,7 @@ pub const EmbedBuilder = struct {
                 try jw.objectField("url");
                 try jw.write(self.author_url);
             }
-            if (self._author_icon_ref) |ref| {
+            if (self.author_icon) |ref| {
                 try jw.objectField("icon_url");
                 try jw.write(ref);
             }
@@ -330,7 +330,7 @@ pub fn newEmbed(self: *MessageBuilder) !*EmbedBuilder {
 pub fn jsonStringifyInner(self: MessageBuilder, jw: anytype) !void {
     {
         try jw.objectField("content");
-        try jw.write(self._content.items);
+        try jw.write(self.content.writer.buffered());
     }
     {
         try jw.objectField("embeds");

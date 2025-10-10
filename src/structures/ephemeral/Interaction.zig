@@ -100,10 +100,6 @@ pub fn fetchUpdateIfIncomplete(self: *Interaction) !void {
     try self.fetchUpdate();
 }
 
-pub fn responseMessageWriter(self: Interaction, token: []const u8) !Client.ResponseWriter {
-    return try self.context.interactionResponseMessageWriter(self.id, token);
-}
-
 pub fn createResponseMessage(self: Interaction, token: []const u8, message_builder: MessageBuilder) !void {
     try self.context.createInteractionResponseMessage(self.id, token, message_builder);
 }

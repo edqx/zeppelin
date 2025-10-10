@@ -29,18 +29,14 @@ const Handler = struct {
         if (!message.meta.queried(.member)) return;
 
         if (std.mem.startsWith(u8, message.content, "!!type")) {
-            var message_writer = try message.replyMessageWriter(.{});
-            try message_writer.write(try .simple(allocator, "Your message was created at {}", .{message.created_at}));
-            _ = try message_writer.create();
+            _ = try message.createReplyMessage(try .simple(allocator, "Your message was created at {}", .{message.created_at}), .{});
         }
     }
 
     pub fn interactionCreate(self: *Handler, ev: zeppelin.Event.InteractionCreate) !void {
         _ = self;
 
-        var message_writer = try ev.interaction.responseMessageWriter(ev.token);
-        try message_writer.write(try .simple(ev.arena, "Pong!", .{}));
-        try message_writer.create();
+        try ev.interaction.createResponseMessage(ev.token, try .simple(ev.arena, "Pong!", .{}));
     }
 };
 
