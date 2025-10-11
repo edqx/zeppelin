@@ -163,12 +163,12 @@ pub const EmbedBuilder = struct {
 
     fields: std.ArrayListUnmanaged(FieldWriter) = .{},
 
-    pub fn init(allocator: std.mem.Allocator) !EmbedBuilder {
+    pub fn init(allocator: std.mem.Allocator) EmbedBuilder {
         return .{
             .allocator = allocator,
-            .title = try .init(allocator),
-            .description = try .init(allocator),
-            .footer_text = try .init(allocator),
+            .title = .init(allocator),
+            .description = .init(allocator),
+            .footer_text = .init(allocator),
         };
     }
 
@@ -319,10 +319,7 @@ pub fn addOwnedEmbed(self: *MessageBuilder, embed_builder: EmbedBuilder) !void {
 }
 
 pub fn newEmbed(self: *MessageBuilder) !*EmbedBuilder {
-    const builder = self.embeds.addOne(self.allocator) catch |e| switch (e) {
-        error.Overflow => return error.TooManyEmbeds,
-        else => return e,
-    };
+    const builder = try self.embeds.addOne(self.allocator);
     builder.* = .init(self.allocator);
     return builder;
 }

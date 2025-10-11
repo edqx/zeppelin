@@ -273,3 +273,10 @@ pub fn createReplyMessage(self: *Message, message_builder: MessageBuilder, optio
     new_options.reference = .{ .reply_to = self.id };
     return try self.context.createMessage(self.channel.id, message_builder, new_options);
 }
+
+pub fn initReplyMessageWriter(self: *Message, message_writer: *Client.MessageWriter, options: Client.MessageWriter.Options) !void {
+    std.debug.assert(options.reference == null);
+    var new_options = options;
+    new_options.reference = .{ .reply_to = self.id };
+    try message_writer.init(self.context, self.channel.id, new_options);
+}

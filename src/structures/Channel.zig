@@ -138,6 +138,11 @@ pub fn AnyChannel(comptime channel_type: Type, comptime used_fields: []const [:0
             }
         }
 
+        pub fn initMessageWriter(self: AnyChannelT, message_writer: *Client.MessageWriter, options: Client.MessageWriter.Options) !void {
+            comptime if (!channel_type.trait(.any_text)) @compileError("Cannot create messages in " ++ @tagName(channel_type) ++ " channels");
+            try message_writer.init(self.context, self.id, options);
+        }
+
         pub fn createMessage(self: AnyChannelT, message_builder: MessageBuilder, options: Client.MessageWriter.Options) !*Message {
             comptime if (!channel_type.trait(.any_text)) @compileError("Cannot create messages in " ++ @tagName(channel_type) ++ " channels");
             return try self.context.createMessage(self.id, message_builder, options);

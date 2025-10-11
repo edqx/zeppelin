@@ -923,7 +923,11 @@ pub const MessageWriter = struct {
     body_writer: std.http.BodyWriter,
     form_data_builder: wardrobe.Builder,
 
-    added_message_data: bool = false,
+    added_message_data: enum {
+        none,
+        json,
+        form,
+    } = .none,
     num_files: usize = 0,
 
     pub fn init(self: *MessageWriter, client: *Client, channel_id: Snowflake, options: Options) !void {
@@ -955,13 +959,10 @@ pub const MessageWriter = struct {
         return self.form_data_builder.writer;
     }
 
-    fn assertNoMessageData(self: *MessageWriter) void {
-        std.debug.assert(!self.added_message_data);
-        self.added_message_data = true;
-    }
-
     pub fn write(self: *MessageWriter, message_builder: MessageBuilder) !void {
-        self.assertNoMessageData();
+        std.debug.assert(self.added_message_data == .none);
+        self.added_message_data = .json;
+
         try self.form_data_builder.beginTextEntry("payload_json");
 
         {
@@ -980,7 +981,9 @@ pub const MessageWriter = struct {
     }
 
     pub fn beginContent(self: *MessageWriter) !void {
-        self.assertNoMessageData();
+        std.debug.assert(self.added_message_data == .none);
+        self.added_message_data = .form;
+
         try self.form_data_builder.beginTextEntry("content");
     }
 
@@ -1001,6 +1004,24 @@ pub const MessageWriter = struct {
     }
 
     pub fn create(self: *MessageWriter) !*Message {
+        switch (self.added_message_data) {
+            .none, .form => {
+                // TODO: find out a way to send reference with content form data
+                // if (self.options.reference) |reference| {
+                //     try self.form_data_builder.beginTextEntry("payload_json");
+
+                //     var json_writer: std.json.Stringify = .{ .writer = self.form_data_builder.writer };
+                //     try json_writer.beginObject();
+
+                //     try json_writer.objectField("message_reference");
+                //     try json_writer.write(reference);
+                //     try json_writer.endObject();
+                // }
+
+                // try self.form_data_builder.endEntry();
+            },
+            .json => {},
+        }
         try self.form_data_builder.endEntries();
         try self.body_writer.end();
         const message_response = try self.req.fetchJson(gateway_message.Message);
@@ -1268,7 +1289,6 @@ pub const InteractionResponseWriter = struct {
     body_writer: std.http.BodyWriter,
     form_data_builder: wardrobe.Builder,
 
-    added_message_data: bool = false,
     num_files: usize = 0,
 
     pub fn init(self: *InteractionResponseWriter, client: *Client, @"type": Interaction.ResponseType, interaction_id: Snowflake, interaction_token: []const u8) !void {
@@ -1297,13 +1317,7 @@ pub const InteractionResponseWriter = struct {
         self.req.deinit();
     }
 
-    fn assertNoMessageData(self: *InteractionResponseWriter) void {
-        std.debug.assert(!self.added_message_data);
-        self.added_message_data = true;
-    }
-
     pub fn write(self: *InteractionResponseWriter, message_builder: MessageBuilder) !void {
-        self.assertNoMessageData();
         try self.form_data_builder.beginTextEntry("payload_json");
 
         {
