@@ -28,41 +28,18 @@ const Handler = struct {
 
         if (!message.meta.queried(.member)) return;
 
-        if (std.mem.startsWith(u8, message.content, "!!declaration")) {
+        if (std.mem.startsWith(u8, message.content, "!!explosion")) {
             try message.createReaction(.{ .unicode = "❤️" });
 
-            var builder: zeppelin.MessageBuilder = .init(allocator);
-            defer builder.deinit();
+            try message.channel.anyText().triggerTypingIndicator();
 
-            {
-                const embed = try builder.newEmbed();
-                try embed.title.writer.print("Message Creation Date", .{});
-                try embed.description.writer.print("Your message was created at {}", .{message.created_at});
-            }
+            std.Thread.sleep(5 * std.time.ns_per_s);
 
-            {
-                const embed = try builder.newEmbed();
-                try embed.title.writer.print("Declaration", .{});
-                try embed.description.writer.print("I am currently writing up your declaration", .{});
-            }
+            const reply_message = try message.createReplyMessage(try .simple(allocator, "This message will self-destruct in 5 seconds", .{}), .{});
 
-            const reply_message = try message.createReplyMessage(builder, .{});
+            std.Thread.sleep(5 * std.time.ns_per_s);
 
-            var message_writer: zeppelin.Client.MessageWriter = undefined;
-            try reply_message.initReplyMessageWriter(&message_writer, .{});
-
-            {
-                try message_writer.beginContent();
-                try message_writer.writer().print("Hello {s}! Please see below for the GOOD NEWS!", .{message.member.nick orelse message.author.username});
-                try message_writer.end();
-
-                try message_writer.beginAttachment("text/plain", "Barney Declaration.txt");
-                try message_writer.writer().print("This is my declaration to say that Barney is a dog.", .{});
-                try message_writer.end();
-            }
-
-            const created_message = try message_writer.create();
-            try created_message.createReaction(.{ .unicode = "🐕" });
+            try reply_message.delete();
         }
     }
 

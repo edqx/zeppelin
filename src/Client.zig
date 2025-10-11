@@ -366,6 +366,10 @@ pub const PooledRest = struct {
             return self.inner.sendHeadersGetWriter(self.transfer_buffer);
         }
 
+        pub fn sendNone(self: *Request) !void {
+            return self.inner.sendNone();
+        }
+
         pub fn sendEmpty(self: *Request) !void {
             return self.inner.sendEmpty();
         }
@@ -1055,7 +1059,8 @@ pub fn deleteMessage(self: *Client, channel_id: Snowflake, message_id: Snowflake
         .message_id = message_id,
     });
     defer req.deinit();
-    try req.fetch();
+    try req.sendNone();
+    _ = try req.fetchSuccess();
 }
 
 pub fn createDM(self: *Client, user_id: Snowflake) !*Channel {
@@ -1087,7 +1092,8 @@ pub fn deleteChannel(self: *Client, channel_id: Snowflake) !void {
         .channel_id = channel_id,
     });
     defer req.deinit();
-    try req.fetch();
+    try req.sendNone();
+    _ = try req.fetchSuccess();
 }
 
 pub fn triggerTypingIndicator(self: *Client, channel_id: Snowflake) !void {
@@ -1095,7 +1101,8 @@ pub fn triggerTypingIndicator(self: *Client, channel_id: Snowflake) !void {
         .channel_id = channel_id,
     });
     defer req.deinit();
-    try req.fetch();
+    try req.sendEmpty();
+    _ = try req.fetchSuccess();
 }
 
 pub const ReactionAdd = union(enum) {

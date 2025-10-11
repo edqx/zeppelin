@@ -53,6 +53,12 @@ pub const Request = struct {
         self.arena.deinit();
     }
 
+    pub fn sendNone(self: *Request) !void {
+        std.debug.assert(!self.sent);
+        defer self.sent = true;
+        try self.http_request.sendBodiless();
+    }
+
     pub fn sendEmpty(self: *Request) !void {
         std.debug.assert(!self.sent);
         defer self.sent = true;
@@ -84,11 +90,6 @@ pub const Request = struct {
     }
 
     pub fn fetch(self: *Request) !std.http.Client.Response {
-        if (!self.sent) {
-            try self.http_request.sendBodiless();
-            self.sent = true;
-        }
-
         std.debug.assert(self.sent);
         log.debug("- Request finished", .{});
 
