@@ -32,6 +32,7 @@ pub fn build(b: *std.Build) void {
     });
 
     example_mod.addImport("zeppelin", mod);
+    example_mod.addImport("wardrobe", wardrobe_dep.module("wardrobe"));
 
     const example_exe = b.addExecutable(.{
         .name = "zeppelin-example",

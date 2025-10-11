@@ -355,13 +355,15 @@ pub const PooledRest = struct {
         pooled_rest: *PooledRest,
         inner: Rest.Request,
 
+        transfer_buffer: []u8,
+
         pub fn deinit(self: *Request) void {
             self.inner.deinit();
-            self.pooled_rest.giveBufferBack(self.inner.out_buffer);
+            self.pooled_rest.giveBufferBack(self.transfer_buffer);
         }
 
-        pub fn getWriter(self: *Request) !Rest.Request.Writer {
-            return self.inner.getWriter();
+        pub fn sendHeadersGetWriter(self: *Request) !std.http.BodyWriter {
+            return self.inner.sendHeadersGetWriter(self.transfer_buffer);
         }
 
         pub fn sendEmpty(self: *Request) !void {
@@ -421,10 +423,12 @@ pub const PooledRest = struct {
         comptime endpoint: []const u8,
         parameters: anytype,
     ) !Request {
-        const buffer = try self.takeBuffer();
+        const transfer_buffer = try self.takeBuffer();
+        errdefer self.giveBufferBack(transfer_buffer);
         return .{
             .pooled_rest = self,
-            .inner = try self.rest_client.create(method, endpoint, parameters, buffer),
+            .inner = try self.rest_client.create(method, endpoint, parameters),
+            .transfer_buffer = transfer_buffer,
         };
     }
 };
@@ -916,8 +920,8 @@ pub const MessageWriter = struct {
     options: Options,
 
     req: PooledRest.Request,
-    http_writer: Rest.Request.Writer,
-    form_data_builder: Rest.Request.FormDataBuilder,
+    body_writer: std.http.BodyWriter,
+    form_data_builder: wardrobe.Builder,
 
     added_message_data: bool = false,
     num_files: usize = 0,
@@ -927,7 +931,7 @@ pub const MessageWriter = struct {
             .client = client,
             .options = options,
             .req = undefined,
-            .http_writer = undefined,
+            .body_writer = undefined,
             .form_data_builder = undefined,
         };
         errdefer self.* = undefined;
@@ -939,12 +943,16 @@ pub const MessageWriter = struct {
 
         const boundary = try self.req.setFormData();
 
-        self.http_writer = try self.req.getWriter();
-        self.form_data_builder = try self.http_writer.formData(boundary);
+        self.body_writer = try self.req.sendHeadersGetWriter();
+        self.form_data_builder = .{ .boundary = boundary, .writer = &self.body_writer.writer };
     }
 
     pub fn deinit(self: *MessageWriter) void {
         self.req.deinit();
+    }
+
+    pub fn writer(self: *MessageWriter) *std.Io.Writer {
+        return self.form_data_builder.writer;
     }
 
     fn assertNoMessageData(self: *MessageWriter) void {
@@ -994,7 +1002,7 @@ pub const MessageWriter = struct {
 
     pub fn create(self: *MessageWriter) !*Message {
         try self.form_data_builder.endEntries();
-        try self.http_writer.end();
+        try self.body_writer.end();
         const message_response = try self.req.fetchJson(gateway_message.Message);
         return try self.client.messages.cache.patch(self.client, try .resolve(message_response.id), .{
             .base = message_response,
@@ -1257,8 +1265,8 @@ pub const InteractionResponseWriter = struct {
     type: Interaction.ResponseType,
 
     req: PooledRest.Request,
-    http_writer: Rest.Request.Writer,
-    form_data_builder: Rest.Request.FormDataBuilder,
+    body_writer: std.http.BodyWriter,
+    form_data_builder: wardrobe.Builder,
 
     added_message_data: bool = false,
     num_files: usize = 0,
@@ -1267,7 +1275,7 @@ pub const InteractionResponseWriter = struct {
         self.* = .{
             .client = client,
             .req = undefined,
-            .http_writer = undefined,
+            .body_writer = undefined,
             .form_data_builder = undefined,
             .type = @"type",
         };
@@ -1281,8 +1289,8 @@ pub const InteractionResponseWriter = struct {
 
         const boundary = try self.req.setFormData();
 
-        self.http_writer = try self.req.getWriter();
-        self.form_data_builder = try self.http_writer.formData(boundary);
+        self.body_writer = try self.req.sendHeadersGetWriter();
+        self.form_data_builder = .{ .boundary = boundary, .writer = &self.body_writer.writer };
     }
 
     pub fn deinit(self: *InteractionResponseWriter) void {
@@ -1340,7 +1348,7 @@ pub const InteractionResponseWriter = struct {
 
     pub fn create(self: *InteractionResponseWriter) !void {
         try self.form_data_builder.endEntries();
-        try self.http_writer.end();
+        try self.body_writer.end();
         _ = try self.req.fetchJson(std.json.Value);
     }
 };

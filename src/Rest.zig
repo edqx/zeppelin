@@ -39,47 +39,18 @@ pub fn multiWriter(streams: anytype) MultiWriter(@TypeOf(streams)) {
 }
 
 pub const Request = struct {
-    pub const HttpWriter = std.http.BodyWriter;
-    pub const FormDataBuilder = wardrobe.Builder;
-
-    pub const Writer = struct {
-        request: *Request,
-        http_writer: HttpWriter,
-
-        pub fn end(self: *Writer) !void {
-            try self.http_writer.end();
-        }
-
-        pub fn json(self: *Writer) !std.json.Stringify {
-            return .{ .writer = &self.http_writer.writer };
-        }
-
-        pub fn formData(self: *Writer, boundary: wardrobe.Boundary) !FormDataBuilder {
-            return .{
-                .boundary = boundary,
-                .writer = &self.http_writer.writer,
-            };
-        }
-    };
-
     arena: std.heap.ArenaAllocator,
-    out_buffer: []u8,
 
     random: std.Random,
     http_request: std.http.Client.Request,
 
     sent: bool = false,
 
+    form_data_boundary: ?wardrobe.Boundary = null,
+
     pub fn deinit(self: *Request) void {
         self.http_request.deinit();
         self.arena.deinit();
-    }
-
-    pub fn getWriter(self: *Request) !Writer {
-        return .{
-            .request = self,
-            .http_writer = try self.ensureHeadersSent(),
-        };
     }
 
     pub fn sendEmpty(self: *Request) !void {
@@ -88,10 +59,11 @@ pub const Request = struct {
         try self.http_request.sendBodyComplete(&.{});
     }
 
-    pub fn ensureHeadersSent(self: *Request) !HttpWriter {
+    pub fn sendHeadersGetWriter(self: *Request, buffer: []u8) !std.http.BodyWriter {
         std.debug.assert(!self.sent);
         defer self.sent = true;
-        return try self.http_request.sendBody(&.{});
+        self.http_request.transfer_encoding = .chunked;
+        return try self.http_request.sendBodyUnflushed(buffer);
     }
 
     pub fn setJson(self: *Request) !void {
@@ -104,17 +76,11 @@ pub const Request = struct {
     pub fn setFormData(self: *Request) !wardrobe.Boundary {
         std.debug.assert(!self.sent);
 
-        const allocator = self.arena.allocator();
-
         log.debug("- Started form data request body", .{});
 
-        const boundary: wardrobe.Boundary = .fromEntropy("ZeppelinBoundary", self.random);
-
-        const content_type_header = try allocator.dupe(u8, boundary.toContentType());
-        errdefer allocator.free(content_type_header);
-
-        self.http_request.headers.content_type = .{ .override = content_type_header };
-        return boundary;
+        self.form_data_boundary = .fromEntropy("ZeppelinBoundary", self.random);
+        self.http_request.headers.content_type = .{ .override = self.form_data_boundary.?.toContentType() };
+        return self.form_data_boundary.?;
     }
 
     pub fn fetch(self: *Request) !std.http.Client.Response {
@@ -129,7 +95,6 @@ pub const Request = struct {
         try self.http_request.connection.?.flush();
 
         const response = try self.http_request.receiveHead(&.{});
-
         log.debug("- Response received, code: {s} {s} ({})", .{ @tagName(response.head.status.class()), @tagName(response.head.status), @intFromEnum(response.head.status) });
 
         return response;
@@ -204,7 +169,6 @@ pub fn create(
     method: std.http.Method,
     comptime endpoint: []const u8,
     parameters: anytype,
-    out_buffer: []u8,
 ) !Request {
     var arena: std.heap.ArenaAllocator = .init(self.allocator);
     errdefer arena.deinit();
@@ -218,10 +182,6 @@ pub fn create(
     errdefer allocator.free(formatted_uri);
 
     var req = try self.http_client.request(method, try std.Uri.parse(formatted_uri), .{});
-    if (method.requestHasBody()) {
-        req.transfer_encoding = .chunked;
-    }
-
     const authorization_header = try std.fmt.allocPrint(allocator, "Bot {s}", .{self.authentication.resolve()});
     errdefer allocator.free(authorization_header);
 
@@ -230,7 +190,6 @@ pub fn create(
     log.info("Request: {s} @ {s}", .{ @tagName(method), formatted_uri });
 
     return .{
-        .out_buffer = out_buffer,
         .arena = arena,
         .random = self.default_prng.random(),
         .http_request = req,
