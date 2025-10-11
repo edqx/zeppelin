@@ -1043,17 +1043,17 @@ pub fn createDM(self: *Client, user_id: Snowflake) !*Channel {
 
     try req.setJson();
 
-    var writer = try req.getWriter();
-    var jw = try writer.json();
+    var body_writer = try req.sendHeadersGetWriter();
+    var js: std.json.Stringify = .{ .writer = &body_writer.writer };
 
-    try jw.beginObject();
+    try js.beginObject();
     {
-        try jw.objectField("recipient_id");
-        try jw.write(user_id);
+        try js.objectField("recipient_id");
+        try js.write(user_id);
     }
-    try jw.endObject();
+    try js.endObject();
 
-    try writer.end();
+    try body_writer.end();
 
     const channel_response = try req.fetchJson(gateway_message.Channel);
     const channel = try self.channels.cache.patch(self, try .resolve(channel_response.id), channel_response);
@@ -1166,30 +1166,30 @@ pub fn startThreadWithoutMessage(
 
     try req.setJson();
 
-    var writer = try req.getWriter();
-    var jw = try writer.json();
+    var body_writer = try req.sendHeadersGetWriter();
+    var js: std.json.Stringify = .{ .writer = &body_writer.writer };
 
-    try jw.beginObject();
+    try js.beginObject();
     {
-        try jw.objectField("name");
-        try jw.write(name);
+        try js.objectField("name");
+        try js.write(name);
     }
     {
-        try jw.objectField("type");
-        try jw.write(@intFromEnum(@"type".channelType()));
+        try js.objectField("type");
+        try js.write(@intFromEnum(@"type".channelType()));
     }
     switch (@"type") {
         .public, .announcement => {},
         .private => |private_options| {
-            try jw.objectField("invitable");
-            try jw.write(private_options.invitable);
+            try js.objectField("invitable");
+            try js.write(private_options.invitable);
         },
     }
 
-    try options.jsonStringifyInner(&jw);
-    try jw.endObject();
+    try options.jsonStringifyInner(&js);
+    try js.endObject();
 
-    try writer.end();
+    try body_writer.end();
 
     const channel_response = try req.fetchJson(gateway_message.Channel);
     const channel = try self.channels.cache.patch(self, try .resolve(channel_response.id), channel_response);
@@ -1212,18 +1212,18 @@ pub fn startThreadFromMessage(
 
     try req.setJson();
 
-    var writer = try req.getWriter();
-    var jw = try writer.json();
+    var body_writer = try req.sendHeadersGetWriter();
+    var js: std.json.Stringify = .{ .writer = &body_writer.writer };
 
-    try jw.beginObject();
+    try js.beginObject();
     {
-        try jw.objectField("name");
-        try jw.write(name);
+        try js.objectField("name");
+        try js.write(name);
     }
-    try options.jsonStringifyInner(&jw);
-    try jw.endObject();
+    try options.jsonStringifyInner(&js);
+    try js.endObject();
 
-    try writer.end();
+    try body_writer.end();
 
     const channel_response = try req.fetchJson(gateway_message.Channel);
     const channel = try self.channels.cache.patch(self, try .resolve(channel_response.id), channel_response);
@@ -1243,18 +1243,18 @@ pub fn bulkOverwriteGlobalApplicationCommands(
 
     try req.setJson();
 
-    var writer = try req.getWriter();
-    var jw = try writer.json();
+    var body_writer = try req.sendHeadersGetWriter();
+    var js: std.json.Stringify = .{ .writer = &body_writer.writer };
 
-    try jw.beginArray();
+    try js.beginArray();
     {
         for (application_command_builders) |builder| {
-            try jw.write(builder);
+            try js.write(builder);
         }
     }
-    try jw.endArray();
+    try js.endArray();
 
-    try writer.end();
+    try body_writer.end();
 
     const application_commands_response = try req.fetchJson(std.json.Value);
     _ = application_commands_response;
