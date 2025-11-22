@@ -42,7 +42,7 @@ pub fn EventPool(comptime Handler: type) type {
             self.dispatchThreadImpl(arena, event) catch |err| {
                 std.log.err("{s}", .{@errorName(err)});
                 if (@errorReturnTrace()) |trace| {
-                    std.debug.dumpStackTrace(trace);
+                    std.debug.dumpStackTrace(trace.*);
                 }
             };
         }
@@ -64,11 +64,17 @@ pub fn EventPool(comptime Handler: type) type {
                         self.allocator.destroy(arena);
                         return;
                     },
+                    error.BrokenPipe,
+                    error.Closed,
+                    error.ConnectionResetByPeer,
+                    error.ConnectionTimedOut,
+                    error.EndOfStream,
+                    error.UnexpectedClose,
+
                     error.RateLimited,
                     error.TimedOut,
                     error.AuthenticationFailed,
                     error.BadIntents,
-                    error.UnexpectedClose,
                     => {
                         if (self.client.maybe_reconnect_options) |reconnect_options| {
                             log.info("Got close, but we will reconnect and resume ({})", .{e});

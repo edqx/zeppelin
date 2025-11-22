@@ -15,34 +15,6 @@ const Handler = struct {
         std.log.info("Logged in as {s}", .{self.own_user.username});
     }
 
-    pub fn userUpdate(self: *Handler, user_update_event: zeppelin.Event.UserUpdate) !void {
-        _ = self;
-        std.log.info("User new name: {s}", .{user_update_event.user.username});
-    }
-
-    pub fn messageCreate(self: *Handler, message_create_event: zeppelin.Event.MessageCreate) !void {
-        const allocator = message_create_event.arena;
-        const message = message_create_event.message;
-
-        if (self.own_user.id == message.author.id) return;
-
-        if (!message.meta.queried(.member)) return;
-
-        if (std.mem.startsWith(u8, message.content, "!!explosion")) {
-            try message.createReaction(.{ .unicode = "❤️" });
-
-            try message.channel.anyText().triggerTypingIndicator();
-
-            std.Thread.sleep(5 * std.time.ns_per_s);
-
-            const reply_message = try message.createReplyMessage(try .simple(allocator, "This message will self-destruct in 5 seconds", .{}), .{});
-
-            std.Thread.sleep(5 * std.time.ns_per_s);
-
-            try reply_message.delete();
-        }
-    }
-
     pub fn interactionCreate(self: *Handler, ev: zeppelin.Event.InteractionCreate) !void {
         _ = self;
 

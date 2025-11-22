@@ -13,7 +13,7 @@ pub const Mention = union(enum) {
         id: Snowflake,
 
         pub fn format(self: Named, writer2: *std.io.Writer) !void {
-            try writer2.print("{s}:{}", .{ self.name, self.id });
+            try writer2.print("{s}:{f}", .{ self.name, self.id });
         }
     };
 

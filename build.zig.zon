@@ -4,8 +4,8 @@
     .version = "1.0.0",
     .dependencies = .{
         .websocket = .{
-            .url = "git+https://github.com/karlseguin/websocket.zig#2d9ae9b0905c4f902dafabb073ebd54065e839b4",
-            .hash = "websocket-0.1.0-ZPISdbxyAwB8d7my8K95rTDLQjbnw9LEycVFA5QjbW5t",
+            .url = "git+https://github.com/karlseguin/websocket.zig#91ca9c501066144fa95a52237da110812e9aa145",
+            .hash = "websocket-0.1.0-ZPISdRNzAwAGszh62EpRtoQxu8wb1MSMVI6Ow0o2dmyJ",
         },
         .wardrobe = .{
             .url = "git+https://github.com/edqx/wardrobe#d5b6cb37d041812bdea15e4ac56d22b9fb3da703",

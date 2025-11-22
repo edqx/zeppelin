@@ -1,5 +1,10 @@
 const std = @import("std");
 
+const Example = enum {
+    slash_commands,
+    mentions,
+};
+
 pub fn build(b: *std.Build) void {
     const logging = b.option(bool, "logging", "Whether the library should emit information through logging") orelse false;
 
@@ -17,36 +22,45 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
+        .imports = &.{
+            .{ .name = "websocket", .module = websocket_dep.module("websocket") },
+            .{ .name = "wardrobe", .module = wardrobe_dep.module("wardrobe") },
+            .{ .name = "datetime", .module = datetime_dep.module("datetime") },
+        },
     });
 
     mod.addOptions("build_options", build_options);
 
-    mod.addImport("websocket", websocket_dep.module("websocket"));
-    mod.addImport("wardrobe", wardrobe_dep.module("wardrobe"));
-    mod.addImport("datetime", datetime_dep.module("datetime"));
-
-    const example_mod = b.addModule("zeppelin-example", .{
-        .root_source_file = b.path("src/example.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    example_mod.addImport("zeppelin", mod);
-    example_mod.addImport("wardrobe", wardrobe_dep.module("wardrobe"));
-
-    const example_exe = b.addExecutable(.{
-        .name = "zeppelin-example",
-        .root_module = example_mod,
-    });
-
     if (target.result.os.tag == .windows) {
-        example_exe.linkSystemLibrary("ws2_32");
-        example_exe.linkSystemLibrary("crypt32");
+        mod.linkSystemLibrary("ws2_32", .{});
+        mod.linkSystemLibrary("crypt32", .{});
     }
 
-    if (optimize == .ReleaseFast or optimize == .ReleaseSmall) {
-        example_exe.linkLibC();
-    }
+    const example_step = create_example: {
+        const example_option = b.option(Example, "example", "Example to run") orelse {
+            const fail = b.addFail("Missing example, use -Dexample=<example name>!");
+            break :create_example &fail.step;
+        };
 
-    b.installArtifact(example_exe);
+        const example_mod = b.addModule("zeppelin-example", .{
+            .root_source_file = b.path(b.fmt("examples/{s}.zig", .{@tagName(example_option)})),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "zeppelin", .module = mod },
+            },
+        });
+
+        const example_exe = b.addExecutable(.{
+            .name = "zeppelin-example",
+            .root_module = example_mod,
+        });
+
+        const example_run = b.addRunArtifact(example_exe);
+
+        break :create_example &example_run.step;
+    };
+
+    const build_example_step = b.step("run-example", "Run an example");
+    build_example_step.dependOn(example_step);
 }
