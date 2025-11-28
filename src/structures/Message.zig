@@ -81,7 +81,7 @@ pub const Flags = packed struct(i32) {
     is_voice_message: bool = false,
     has_snapshot: bool = false,
     is_components_v2: bool = false,
-    _packed2: enum(u15) { unset } = .unset,
+    _packed2: enum(u16) { unset } = .unset,
 };
 
 // pub const Color = switch (builtin.target.cpu.arch.endian()) {

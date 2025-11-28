@@ -3,6 +3,7 @@ const std = @import("std");
 const Example = enum {
     slash_commands,
     mentions,
+    buttons,
 };
 
 pub fn build(b: *std.Build) void {

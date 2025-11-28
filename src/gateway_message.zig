@@ -482,6 +482,23 @@ pub const Message = struct {
 };
 
 pub const Interaction = struct {
+    pub const ApplicationCommandData = struct {
+        id: Snowflake,
+        name: []const u8,
+        type: i32,
+        resolved: Elective(std.json.Value) = .not_given, // todo: parse fully
+        options: Elective(std.json.Value) = .not_given, // todo: parse fully
+        guild_id: Elective(Snowflake) = .not_given,
+        target_id: Elective(Snowflake) = .not_given,
+    };
+
+    pub const MessageComponentData = struct {
+        custom_id: []const u8,
+        component_type: i32,
+        values: Elective(std.json.Value) = .not_given, // todo: parse fully
+        resolved: Elective(std.json.Value) = .not_given, // todo: parse fully
+    };
+
     id: Snowflake,
     application_id: Snowflake,
     type: i32,
