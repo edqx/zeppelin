@@ -23,7 +23,7 @@ const Handler = struct {
 
         if (!message.meta.queried(.member)) return;
 
-        if (std.mem.eql(u8, message.content, "hi barney")) {
+        if (std.mem.eql(u8, message.content, "summon barney")) {
             var message_builder: zeppelin.MessageBuilder = .init(allocator);
             defer message_builder.deinit();
 
@@ -32,9 +32,9 @@ const Handler = struct {
 
             button.style = .success;
             button.custom_id = "kiss";
-            try button.label.writer.print("Kiss barney!", .{});
+            try button.label.writer.print("Kiss Barney", .{});
 
-            try message_builder.content.writer.print("Hello!", .{});
+            try message_builder.content.writer.print("Wooooff!", .{});
 
             _ = try message.createReplyMessage(message_builder, .{});
         }
@@ -42,15 +42,21 @@ const Handler = struct {
 
     pub fn interactionCreate(self: *Handler, interaction_create_event: zeppelin.Event.InteractionCreate) !void {
         const allocator = interaction_create_event.arena;
+        const interaction = interaction_create_event.interaction;
 
         _ = self;
 
-        _ = try interaction_create_event.interaction.createResponseMessage(
-            interaction_create_event.token,
-            try .simple(allocator, "Nope", .{}),
-        );
-
-        std.log.info("t: {}", .{interaction_create_event.interaction.type});
+        switch (interaction.inner) {
+            .component => |component_data| {
+                if (std.mem.eql(u8, component_data.custom_id, "kiss")) {
+                    _ = try interaction.createResponseMessage(
+                        interaction_create_event.token,
+                        try .simple(allocator, "\\*dodges*", .{}),
+                    );
+                }
+            },
+            else => {},
+        }
     }
 };
 

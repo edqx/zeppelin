@@ -56,17 +56,29 @@ pub const Command = struct {
     name: []const u8,
     type: CommandType,
     // todo: options, resolved
+
+    pub fn deinit(self: Command, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+    }
 };
 
 pub const Component = struct {
+    id: i32,
     custom_id: []const u8,
     component_type: ComponentType,
     // todo: values, resolved
+    pub fn deinit(self: Component, allocator: std.mem.Allocator) void {
+        allocator.free(self.custom_id);
+    }
 };
 
 pub const ModalSubmit = struct {
     custom_id: []const u8,
     components: []Component,
+    pub fn deinit(self: ModalSubmit, allocator: std.mem.Allocator) void {
+        _ = self;
+        _ = allocator;
+    }
 };
 
 pub const Inner = union(enum) {
@@ -105,14 +117,16 @@ pub fn patch(self: *Interaction, data: Data) !void {
             switch (self.type) {
                 .ping => {},
                 .application_command => {
-                    const app_command_data = try std.json.parseFromValue(Data.ApplicationCommandData, allocator, json_data, .{});
+                    const app_command_data = try std.json.parseFromValue(Data.ApplicationCommandData, allocator, json_data, .{
+                        .ignore_unknown_fields = true,
+                    });
                     defer app_command_data.deinit();
 
                     const name = try allocator.dupe(u8, app_command_data.value.name);
                     errdefer allocator.free(name);
 
                     const command: Command = .{
-                        .id = app_command_data.value.id,
+                        .id = try .resolve(app_command_data.value.id),
                         .name = name,
                         .type = @enumFromInt(app_command_data.value.type),
                     };
@@ -120,19 +134,21 @@ pub fn patch(self: *Interaction, data: Data) !void {
                     self.meta.patch(.inner, .{ .command = command });
                 },
                 .message_component => {
-                    const component_data = try std.json.parseFromValue(Data.MessageComponentData, allocator, json_data, .{});
+                    const component_data = try std.json.parseFromValue(Data.MessageComponentData, allocator, json_data, .{
+                        .ignore_unknown_fields = true,
+                    });
                     defer component_data.deinit();
 
-                    const name = try allocator.dupe(u8, component_data.value.name);
-                    errdefer allocator.free(name);
+                    const custom_id = try allocator.dupe(u8, component_data.value.custom_id);
+                    errdefer allocator.free(custom_id);
 
-                    const command: Command = .{
-                        .id = app_command_data.value.id,
-                        .name = name,
-                        .type = @enumFromInt(app_command_data.value.type),
+                    const component: Component = .{
+                        .id = component_data.value.id,
+                        .custom_id = custom_id,
+                        .component_type = @enumFromInt(component_data.value.component_type),
                     };
 
-                    self.meta.patch(.inner, .{ .command = command });
+                    self.meta.patch(.inner, .{ .component = component });
                 },
                 .application_command_autocomplete => {},
                 .modal_submit => {},

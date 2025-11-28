@@ -493,6 +493,7 @@ pub const Interaction = struct {
     };
 
     pub const MessageComponentData = struct {
+        id: i32,
         custom_id: []const u8,
         component_type: i32,
         values: Elective(std.json.Value) = .not_given, // todo: parse fully

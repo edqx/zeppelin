@@ -405,6 +405,9 @@ pub const PooledRest = struct {
     }
 
     pub fn deinit(self: *PooledRest) void {
+        for (self.dormant_buffer_pool.items) |buffer| {
+            self.allocator.free(buffer);
+        }
         self.dormant_buffer_pool.deinit(self.allocator);
         self.rest_client.deinit();
     }
@@ -412,6 +415,7 @@ pub const PooledRest = struct {
     fn takeBuffer(self: *PooledRest) ![]u8 {
         if (self.dormant_buffer_pool.pop()) |buffer| return buffer;
         const buffer = try self.allocator.alloc(u8, BufferSize);
+        errdefer self.allocator.free(buffer);
         // make space in the dormat buffer so we can safely add this back in Request.deinit and assume there's capacity
         _ = try self.dormant_buffer_pool.ensureUnusedCapacity(self.allocator, 1);
         return buffer;
@@ -477,6 +481,9 @@ pub fn deinit(self: *Client) void {
     self.channels.deinit();
     self.pooled_rest_client.deinit();
     self.clearReconnect();
+    if (self.maybe_reconnect_options) |options| {
+        options.free(self.allocator);
+    }
     if (self.maybe_gateway_client) |*gateway_client| {
         gateway_client.deinit();
     }

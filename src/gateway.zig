@@ -113,6 +113,11 @@ pub const Options = struct {
     host: []const u8 = "gateway.discord.gg",
     session_id: []const u8 = "",
 
+    pub fn free(self: Options, allocator: std.mem.Allocator) void {
+        allocator.free(self.host);
+        allocator.free(self.session_id);
+    }
+
     pub fn dupe(self: Options, allocator: std.mem.Allocator) !Options {
         const host = try allocator.dupe(u8, self.host);
         errdefer allocator.free(host);
