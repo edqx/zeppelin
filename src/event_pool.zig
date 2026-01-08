@@ -63,32 +63,12 @@ pub fn EventPool(comptime Handler: type) type {
 
                 const event = self.client.receive(&arena) catch |e| switch (e) {
                     error.Disconnected => {
-                        log.info("Got disconnect, not resuming", .{});
-                        // arena.deinit();
-                        // self.allocator.destroy(arena);
-                        return;
-                    },
-                    error.BrokenPipe,
-                    error.Closed,
-                    error.ConnectionResetByPeer,
-                    error.ConnectionTimedOut,
-                    error.EndOfStream,
-                    error.UnexpectedClose,
-
-                    error.RateLimited,
-                    error.TimedOut,
-                    error.AuthenticationFailed,
-                    error.BadIntents,
-                    => {
-                        if (self.client.maybe_reconnect_options) |reconnect_options| {
-                            log.info("Got close, but we will reconnect and resume ({})", .{e});
-                            // arena.deinit();
-                            // self.allocator.destroy(arena);
-                            try self.client.connectAndLogin(reconnect_options);
+                        if (self.client.takeReconnect()) |options| {
+                            defer self.client.freeReconnect(options);
+                            try self.client.connectAndLogin(options);
                             continue;
                         } else {
-                            log.info("Got close, no resume possible ({})", .{e});
-                            return e;
+                            return error.Disconnected;
                         }
                     },
                     else => return e,

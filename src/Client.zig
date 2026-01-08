@@ -27,6 +27,8 @@ const Message = @import("models/Message.zig");
 const Role = @import("models/Role.zig");
 const User = @import("models/User.zig");
 
+const voice = @import("voice/voice.zig");
+
 const StandardGatewayClient = gateway.Client(.{ .compression = .none });
 
 const Client = @This();
@@ -464,24 +466,28 @@ messages: MessageManager,
 roles: RoleManager,
 users: UserManager,
 
+voice_client: voice.Client,
+
 pub fn init(self: *Client, options: InitOptions) !void {
+    // let's not rely on RLS. the cache structs rely on the allocator
+    // existing
+    //
+    // TODO: take the allocator as a parameter in the cache structs init
+    // rather than taking it from the client
+    self.allocator = options.allocator;
+
     self.* = .{
         .allocator = options.allocator,
         .maybe_gateway_client = null,
         .maybe_reconnect_options = null,
         .pooled_rest_client = try .init(options.allocator, options.authentication),
-        .channels = undefined,
-        .guilds = undefined,
-        .messages = undefined,
-        .roles = undefined,
-        .users = undefined,
+        .channels = .init(self),
+        .guilds = .init(self),
+        .messages = .init(self),
+        .roles = .init(self),
+        .users = .init(self),
+        .voice_client = .{ .gpa = self.allocator },
     };
-
-    self.channels = .init(self);
-    self.guilds = .init(self);
-    self.messages = .init(self);
-    self.roles = .init(self);
-    self.users = .init(self);
 }
 
 pub fn deinit(self: *Client) void {
@@ -509,13 +515,53 @@ pub fn disconnect(self: *Client) !void {
 
     log.info("Disconnect requested", .{});
 
-    self.clearReconnect();
     try gateway_client.disconnect();
+    gateway_client.deinit();
+    self.maybe_gateway_client = null;
 }
 
+pub fn setupReconnect(self: *Client, override: enum { use_session, new_session }) !void {
+    log.debug("Setting up reconnect state, mode: {}", .{ override });
+
+    if (override == .new_session or self.maybe_reconnect_options == null) {
+        _ = self.takeReconnect();
+        self.maybe_reconnect_options = try self.maybe_gateway_client.?.options.dupe(self.allocator);
+    }
+
+    self.disconnect() catch |e| {
+        log.err("Disconnect failed with error {}, ignoring..", .{e});
+    };
+}
+
+fn clearReconnect(self: *Client) void {
+    log.debug("Clearing reconnect state", .{ });
+
+    if (self.maybe_reconnect_options) |reconnect_options| {
+        self.allocator.free(reconnect_options.session_id);
+        self.allocator.free(reconnect_options.host);
+    }
+    self.maybe_reconnect_options = null;
+}
+
+/// Call with `freeReconnect` in defer
+pub fn takeReconnect(self: *Client) ?gateway.Options {
+    log.debug("Reconnect state taken", .{ });
+
+    if (self.maybe_reconnect_options) |options| {
+        self.maybe_reconnect_options = null;
+        return options;
+    }
+    return null;
+}
+
+pub fn freeReconnect(self: *Client, options: gateway.Options) void {
+    options.free(self.allocator);
+}
+
+/// Gateway duplicates `options` and therefore contents and be safely free'd
 pub fn connectAndLogin(self: *Client, options: gateway.Options) !void {
     if (self.maybe_gateway_client != null) return error.Connected;
-    self.maybe_reconnect_options = null;
+    if (self.maybe_reconnect_options != null) return error.UnusedReconnect;
 
     self.maybe_gateway_client = @as(StandardGatewayClient, undefined);
 
@@ -525,26 +571,10 @@ pub fn connectAndLogin(self: *Client, options: gateway.Options) !void {
         self.pooled_rest_client.rest_client.authentication.resolve(),
         options,
     );
-    if (try self.maybe_gateway_client.?.connectAndAuthenticate()) |fail_message| {
-        switch (fail_message) {
-            .dispatch_event, .hello, .close => unreachable,
-            .reconnect => {
-                try self.disconnect();
-                return try self.connectAndLogin(options);
-            },
-            .invalid_session => {
-                // todo: handle
-            },
-        }
-    }
-}
-
-fn clearReconnect(self: *Client) void {
-    if (self.maybe_reconnect_options) |reconnect_options| {
-        self.allocator.free(reconnect_options.session_id);
-        self.allocator.free(reconnect_options.host);
-    }
-    self.maybe_reconnect_options = null;
+    
+    var close_opcode: gateway.CloseOpcode = undefined;
+    
+    try self.maybe_gateway_client.?.connectAndAuthenticate(&close_opcode);
 }
 
 fn processReadyEvent(
@@ -842,48 +872,10 @@ pub fn processGatewayMessage(self: *Client, allocator: std.mem.Allocator, messag
                 },
             }
         },
-        .reconnect => {
-            log.info("Server requested reconnect", .{});
-            // self.maybe_reconnect_options = try self.maybe_gateway_client.?.options.dupe(self.allocator);
-            try self.disconnect();
-        },
-        .hello, .invalid_session => {
-            // TODO: handle
-        },
-        .close => |maybe_close_opcode| {
-            if (maybe_close_opcode) |close_opcode| {
-                log.info("Got close {}, can reconnect? {}", .{ close_opcode, close_opcode.reconnect() });
-
-                if (!close_opcode.reconnect()) {
-                    self.clearReconnect();
-                }
-
-                try self.disconnect();
-
-                switch (close_opcode) {
-                    .rate_limited => return error.RateLimited,
-                    .session_timed_out => return error.TimedOut,
-                    .not_authenticated,
-                    .authentication_failed,
-                    .already_authenticated,
-                    => return error.AuthenticationFailed,
-                    .invalid_intents,
-                    .disallowed_intents,
-                    => return error.BadIntents,
-                    .unknown_error,
-                    .unknown_opcode,
-                    .decode_error,
-                    .invalid_sequence,
-                    .invalid_shard,
-                    .sharding_required,
-                    .invalid_api_version,
-                    => return error.UnexpectedClose,
-                }
-            } else {
-                log.info("Got unexpected close without a reason", .{});
-                // self.clearReconnect(); // let's try to reconnect if the socket closes 'normally'
-                return error.UnexpectedClose;
-            }
+        .hello => {
+            log.err("Server sent another hello", .{});
+            try self.setupReconnect(.new_session);
+            return error.Disconnected;
         },
     }
     return null;
@@ -896,19 +888,53 @@ pub fn receive(self: *Client, arena: *std.heap.ArenaAllocator) !Event {
         _ = arena.reset(.retain_capacity);
 
         const allocator = arena.allocator();
-
-        const message = gateway_client.readMessage(allocator) catch |e| switch (e) {
-            // error.TlsConnectionTruncated => {
-            //     gateway_client.deinit();
-            //     self.maybe_gateway_client = null;
-            //     return error.Disconnected;
-            // },
-            error.Closed => {
+        
+        var close_opcode: gateway.CloseOpcode = undefined;
+        const message = gateway_client.receiveMessage(allocator, &close_opcode) catch |e| switch (e) {
+            error.GatewayClosed => {
                 gateway_client.deinit();
                 self.maybe_gateway_client = null;
+                
+                if (!close_opcode.shouldReconnect()) {
+                    self.clearReconnect();
+                }
+                
+                log.debug("Got gateway closed with close opcode: {}", .{ close_opcode });
+                
+                switch (close_opcode) {
+                    .rate_limited => return error.RateLimited,
+                    .session_timed_out => return error.TimedOut,
+                    .not_authenticated,
+                    .authentication_failed,
+                    .already_authenticated,
+                    => return error.AuthenticationFailed,
+                    .invalid_intents,
+                    .disallowed_intents,
+                    => return error.BadIntents,
+                    .none,
+                    .unknown_error,
+                    .unknown_opcode,
+                    .decode_error,
+                    .invalid_sequence,
+                    .invalid_shard,
+                    .sharding_required,
+                    .invalid_api_version,
+                    => return error.Disconnected,
+                }
+            },
+            error.GatewayReconnect => {
+                log.info("Server requested reconnect", .{});
+                try self.setupReconnect(.use_session);
                 return error.Disconnected;
             },
-            else => return e,
+            error.GatewayHeartbeatFailed,
+            error.GatewayInvalidSession,
+            error.GatewayJsonParseFailed,
+            error.GatewayJsonWriteFailed,
+            error.GatewayReadFailed,
+            error.GatewaySendFailed,
+            error.GatewayUnknownOpcode,
+            error.GatewayWriteFailed => |err| return err,
         };
 
         if (try self.processGatewayMessage(arena.allocator(), message)) |event| {

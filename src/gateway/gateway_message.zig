@@ -57,6 +57,7 @@ pub const opcode = struct {
     };
 
     pub const Close = enum(u32) {
+        none = 0,
         unknown_error = 4000,
         unknown_opcode = 4001,
         decode_error = 4002,
@@ -72,8 +73,9 @@ pub const opcode = struct {
         invalid_intents = 4013,
         disallowed_intents = 4014,
 
-        pub fn reconnect(self: Close) bool {
+        pub fn shouldReconnect(self: Close) bool {
             return switch (self) {
+                .none,
                 .unknown_error,
                 .unknown_opcode,
                 .decode_error,

@@ -93,10 +93,7 @@ pub const MessageRead = union(enum) {
     };
 
     dispatch_event: DispatchEvent,
-    reconnect: void,
-    invalid_session: void,
     hello: Hello,
-    close: ?gateway_message.opcode.Close,
 };
 
 pub const Config = struct {
@@ -131,6 +128,13 @@ pub const Options = struct {
         };
     }
 };
+
+pub const CloseOpcode = gateway_message.opcode.Close;
+
+pub const InitError = std.mem.Allocator.Error || error { GatewayHandshakeFailed };
+pub const AuthError = error { GatewayInvalidState };
+pub const ReceiveError = error { GatewayClosed, GatewayReadFailed, GatewayJsonParseFailed, GatewayInvalidSession, GatewayReconnect, GatewayUnknownOpcode };
+pub const SendError = error { GatewayHeartbeatFailed, GatewayJsonWriteFailed, GatewaySendFailed, GatewayWriteFailed };
 
 pub fn Client(config: Config) type {
     return struct {
@@ -174,31 +178,36 @@ pub fn Client(config: Config) type {
         sequence_number: ?usize,
         was_last_heartbeat_acknowledged: bool,
         state: State,
+        
+        websocket_error: ?anyerror = null,
 
         pub fn init(
             self: *ClientT,
             allocator: std.mem.Allocator,
             token_ephemeral: []const u8,
             options: Options,
-        ) !void {
-            var websocket_client = try websocket.Client.init(allocator, .{
-                .host = options.host,
+        ) InitError!void {
+            const duped_options = try options.dupe(allocator);
+            errdefer duped_options.free(allocator);
+        
+            var websocket_client = websocket.Client.init(allocator, .{
+                .host = duped_options.host,
                 .port = 443,
                 .tls = true,
                 .max_size = 65536 * 4,
-            });
+            }) catch return error.GatewayHandshakeFailed;
             errdefer websocket_client.deinit();
 
             var headers_buffer: [1024]u8 = undefined;
-            const headers = try std.fmt.bufPrint(&headers_buffer,
+            const headers = std.fmt.bufPrint(&headers_buffer,
                 \\Host: {s}
-            , .{options.host});
+            , .{duped_options.host}) catch unreachable;
 
             // var path_buffer: [128]u8 = undefined;
             // var path_array: std.ArrayListUnmanaged(u8) = .fromOwnedSlice(&path_buffer);
 
             // const path_writer = path_array.fixedWriter();
-            // try path_writer.print("/?v=10&encoding=json", .{}); // todo: ETF encoding
+            // path_writer.print("/?v=10&encoding=json", .{}) catch unreachable; // todo: ETF encoding
             // switch (config.compression) {
             //     .none => {},
             //     .zlib => try path_writer.print("&compress=zlib-stream", .{}),
@@ -211,19 +220,19 @@ pub fn Client(config: Config) type {
                 .zstd => "&compress=zstd-stream",
             };
 
-            log.info("Gateway connecting at wss://{s}{s}", .{ options.host, path });
+            log.info("Gateway connecting at wss://{s}{s}", .{ duped_options.host, path });
 
-            try websocket_client.handshake(path, .{
+            websocket_client.handshake(path, .{
                 .timeout_ms = 5000,
                 .headers = headers,
-            });
+            }) catch return error.GatewayHandshakeFailed;
 
             self.* = .{
                 .allocator = allocator,
                 .websocket_client = websocket_client,
 
                 .token_ephemeral = token_ephemeral,
-                .options = options,
+                .options = duped_options,
 
                 .compression_fifo = undefined,
                 .decompressor_window = undefined,
@@ -273,11 +282,13 @@ pub fn Client(config: Config) type {
                 .none => {},
                 .zlib, .zstd => self.compression_fifo.deinit(),
             }
+            // this is duped in `init`
+            self.options.free(self.allocator);
         }
 
         pub fn disconnect(self: *ClientT) !void {
             self.stopHeartbeat();
-            try self.websocket_client.close(.{});
+            self.websocket_client.close(.{}) catch return error.GatewaySendFailed;
         }
 
         pub fn stopHeartbeat(self: *ClientT) void {
@@ -288,38 +299,39 @@ pub fn Client(config: Config) type {
             }
         }
 
-        pub fn connectAndAuthenticate(self: *ClientT) !?MessageRead {
-            try self.websocket_client.readTimeout(0);
+        // user of this gateway should wait for a 'ready' event
+        pub fn connectAndAuthenticate(self: *ClientT, close_opcode: *CloseOpcode) (ReceiveError || SendError || AuthError)!void {
+            // try self.websocket_client.readTimeout(0);
 
-            while (true) {
-                var arena: std.heap.ArenaAllocator = .init(self.allocator);
-                defer arena.deinit();
+            var arena: std.heap.ArenaAllocator = .init(self.allocator);
+            defer arena.deinit();
 
-                const allocator = arena.allocator();
+            const allocator = arena.allocator();
 
-                const message = try self.readMessage(allocator);
-                switch (message) {
-                    .dispatch_event => {},
-                    .reconnect,
-                    .invalid_session,
-                    => return message,
-                    .hello => |hello_details| {
-                        self.heartbeat_interval = hello_details.heartbeat_interval;
-                        self.heartbeat_thread = try std.Thread.spawn(.{}, heartbeatInterval, .{self});
-                        self.state = .received_hello;
+            // let's wait for a 'hello' response from the server
+            const hello = try self.receiveMessage(allocator, close_opcode);
+            switch (hello) {
+                // we should not be receiving these events. the server is yet to greet us
+                // and we are yet to identify
+                .dispatch_event => return error.GatewayInvalidState,
+                .hello => |hello_details| {
+                    self.heartbeat_interval = hello_details.heartbeat_interval;
+                    self.heartbeat_thread = std.Thread.spawn(.{}, heartbeatInterval, .{self}) catch return error.GatewayHeartbeatFailed;
+                    self.state = .received_hello;
 
-                        try self.sendIdentify();
-                        break;
-                    },
-                    .close => return error.UnexpectedClose,
-                }
+                    try self.sendIdentify();
+                    return;
+                },
             }
-            return null;
         }
 
-        pub fn readMessage(self: *ClientT, arena: std.mem.Allocator) !MessageRead {
+        /// Filters out 'heartbeat' messages, returning the next 'interesting' one
+        pub fn receiveMessage(self: *ClientT, arena: std.mem.Allocator, close_opcode: *CloseOpcode) (ReceiveError || SendError)!MessageRead {
             while (true) {
-                const message = try self.websocket_client.read() orelse unreachable;
+                const message = self.websocket_client.read() catch |e| {
+                    self.websocket_error = e;
+                    return error.GatewayReadFailed;
+                } orelse unreachable;
                 defer self.websocket_client.done(message);
 
                 switch (message.type) {
@@ -339,13 +351,13 @@ pub fn Client(config: Config) type {
 
                         var json_reader: std.json.Reader = .init(arena, data_reader);
 
-                        const event = try std.json.parseFromTokenSourceLeaky(gateway_message.Receive, arena, &json_reader, .{
+                        const event = std.json.parseFromTokenSourceLeaky(gateway_message.Receive, arena, &json_reader, .{
                             .allocate = .alloc_always,
                             .ignore_unknown_fields = true,
-                        });
+                        }) catch return error.GatewayJsonParseFailed;
 
                         const opcode = std.meta.intToEnum(gateway_message.opcode.Receive, event.op) catch {
-                            return error.UnknownOpcode;
+                            return error.GatewayUnknownOpcode;
                         };
 
                         if (event.s) |new_sequence_number| {
@@ -363,21 +375,23 @@ pub fn Client(config: Config) type {
                                 try self.sendHeartbeat();
                             },
                             .reconnect => {
-                                return .reconnect;
+                                return error.GatewayReconnect;
                             },
                             .invalid_session => {
-                                return .invalid_session;
+                                return error.GatewayInvalidSession;
                             },
                             .hello => {
-                                const hello_payload = try std.json.parseFromValueLeaky(
+                                const hello_payload = std.json.parseFromValueLeaky(
                                     gateway_message.payload.Hello,
                                     arena,
                                     event.d orelse .null,
                                     .{
                                         .ignore_unknown_fields = true,
                                     },
-                                );
+                                ) catch return error.GatewayJsonParseFailed;
+
                                 log.debug("Got hello, heartbeat interval: {}", .{hello_payload.heartbeat_interval});
+
                                 return .{ .hello = .{
                                     .heartbeat_interval = @intCast(hello_payload.heartbeat_interval),
                                 } };
@@ -389,22 +403,27 @@ pub fn Client(config: Config) type {
                         }
                     },
                     .ping => {
-                        try self.websocket_client.writeFrame(.pong, @constCast(message.data));
+                        self.websocket_client.writeFrame(.pong, @constCast(message.data)) catch |e| {
+                            self.websocket_error = e;
+                            return error.GatewayWriteFailed;
+                        };
                     },
                     .close => {
-                        if (message.data.len > 1) blk: {
+                        self.websocket_client.close(.{}) catch |e| {
+                            self.websocket_error = e;
+                            return error.GatewayWriteFailed;
+                        };
+
+                        // doesn't always contain a close code
+                        if (message.data.len > 1) {
                             const close_opcode_int = std.mem.readInt(u16, message.data[0..2], .big);
-
-                            const close_opcode = std.meta.intToEnum(
-                                gateway_message.opcode.Close,
-                                close_opcode_int,
-                            ) catch break :blk;
-
-                            return .{ .close = close_opcode };
+                            close_opcode.* = std.meta.intToEnum(CloseOpcode, close_opcode_int) catch .none;
+                            return error.GatewayClosed;
+                        } else {
+                            close_opcode.* = .none;
                         }
 
-                        try self.websocket_client.close(.{});
-                        return .{ .close = null };
+                        return error.GatewayClosed;
                     },
                     .pong => {},
                 }
@@ -415,7 +434,7 @@ pub fn Client(config: Config) type {
             self: *ClientT,
             comptime opcode: gateway_message.opcode.Send,
             payload: opcode.Payload(),
-        ) !void {
+        ) SendError!void {
             const temp_allocator = self.allocator;
         
             const send_event: gateway_message.Send(opcode.Payload()) = .{
@@ -425,13 +444,13 @@ pub fn Client(config: Config) type {
 
             // TODO: re-use buffers to avoid allocating every event. luckily sending on the gateway is not very
             // common
-            const data = try std.json.Stringify.valueAlloc(temp_allocator, send_event, .{});
+            const data = std.json.Stringify.valueAlloc(temp_allocator, send_event, .{}) catch return error.GatewayJsonWriteFailed;
             defer temp_allocator.free(data);
 
-            try self.websocket_client.write(data);
+            self.websocket_client.write(data) catch return error.GatewaySendFailed;
         }
 
-        fn sendIdentify(self: *ClientT) !void {
+        fn sendIdentify(self: *ClientT) SendError!void {
             const token = self.token_ephemeral orelse {
                 log.err("Expected token to be available for identify", .{});
                 return;
@@ -449,15 +468,15 @@ pub fn Client(config: Config) type {
             });
         }
 
-        fn sendHeartbeat(self: *ClientT) !void {
+        fn sendHeartbeat(self: *ClientT) SendError!void {
             try self.sendEvent(.heartbeat, self.sequence_number);
         }
         
-        pub fn sendVoiceStateUpdate(self: *ClientT, update: gateway_message.payload.SendVoiceStateUpdate) !void {
+        pub fn sendVoiceStateUpdate(self: *ClientT, update: gateway_message.payload.SendVoiceStateUpdate) SendError!void {
             try self.sendEvent(.voice_state_update, update);
         }
 
-        fn heartbeatInterval(self: *ClientT) !void {
+        fn heartbeatInterval(self: *ClientT) SendError!void {
             var prng = std.Random.DefaultPrng.init(@intCast(std.time.microTimestamp()));
             const interval: i64 = @intCast(self.heartbeat_interval.?);
             var wait_ms = prng.random().intRangeAtMost(i64, 0, interval);
@@ -473,14 +492,13 @@ pub fn Client(config: Config) type {
                         error.Timeout => {
                             if (!self.state.alive()) continue;
                             if (!self.was_last_heartbeat_acknowledged) {
-                                try self.websocket_client.close(.{});
+                                try self.disconnect();
                                 break;
                             }
 
                             self.was_last_heartbeat_acknowledged = false;
                             try self.sendHeartbeat();
                         },
-                        else => return e,
                     }
                 }
             }
