@@ -497,11 +497,11 @@ pub fn deinit(self: *Client) void {
     self.guilds.deinit();
     self.channels.deinit();
     self.pooled_rest_client.deinit();
-    self.clearReconnect();
     if (self.maybe_reconnect_options) |options| {
         options.free(self.allocator);
     }
     if (self.maybe_gateway_client) |*gateway_client| {
+        gateway_client.disconnect();
         gateway_client.deinit();
     }
 }
@@ -515,7 +515,7 @@ pub fn disconnect(self: *Client) !void {
 
     log.info("Disconnect requested", .{});
 
-    try gateway_client.disconnect();
+    gateway_client.disconnect();
     gateway_client.deinit();
     self.maybe_gateway_client = null;
 }
@@ -537,8 +537,7 @@ fn clearReconnect(self: *Client) void {
     log.debug("Clearing reconnect state", .{ });
 
     if (self.maybe_reconnect_options) |reconnect_options| {
-        self.allocator.free(reconnect_options.session_id);
-        self.allocator.free(reconnect_options.host);
+        reconnect_options.free(self.allocator);
     }
     self.maybe_reconnect_options = null;
 }
@@ -892,6 +891,7 @@ pub fn receive(self: *Client, arena: *std.heap.ArenaAllocator) !Event {
         var close_opcode: gateway.CloseOpcode = undefined;
         const message = gateway_client.receiveMessage(allocator, &close_opcode) catch |e| switch (e) {
             error.GatewayClosed => {
+                gateway_client.disconnect();
                 gateway_client.deinit();
                 self.maybe_gateway_client = null;
                 

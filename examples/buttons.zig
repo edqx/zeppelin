@@ -86,7 +86,10 @@ pub fn main() !void {
 
     var event_pool: zeppelin.EventPool(Handler) = undefined;
     defer event_pool.deinit();
+    
+    client.deinit();
 
     try event_pool.init(allocator, &client, &handler);
     try event_pool.start();
+
 }

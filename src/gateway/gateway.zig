@@ -272,8 +272,6 @@ pub fn Client(config: Config) type {
         }
 
         pub fn deinit(self: *ClientT) void {
-            self.stopHeartbeat();
-            self.websocket_client.deinit();
             switch (config.compression) {
                 .none, .zlib => {},
                 .zstd => self.allocator.free(self.decompressor_window),
@@ -286,9 +284,9 @@ pub fn Client(config: Config) type {
             self.options.free(self.allocator);
         }
 
-        pub fn disconnect(self: *ClientT) !void {
+        pub fn disconnect(self: *ClientT) void {
             self.stopHeartbeat();
-            self.websocket_client.close(.{}) catch return error.GatewaySendFailed;
+            self.websocket_client.close(.{}) catch unreachable;
         }
 
         pub fn stopHeartbeat(self: *ClientT) void {
@@ -492,7 +490,7 @@ pub fn Client(config: Config) type {
                         error.Timeout => {
                             if (!self.state.alive()) continue;
                             if (!self.was_last_heartbeat_acknowledged) {
-                                try self.disconnect();
+                                self.disconnect();
                                 break;
                             }
 
