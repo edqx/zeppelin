@@ -503,6 +503,7 @@ pub fn deinit(self: *Client) void {
     if (self.maybe_gateway_client) |*gateway_client| {
         gateway_client.disconnect();
         gateway_client.deinit();
+        self.maybe_gateway_client = null;
     }
 }
 
@@ -524,7 +525,10 @@ pub fn setupReconnect(self: *Client, override: enum { use_session, new_session }
     log.debug("Setting up reconnect state, mode: {}", .{ override });
 
     if (override == .new_session or self.maybe_reconnect_options == null) {
-        _ = self.takeReconnect();
+        if (self.takeReconnect()) |existing_state| {
+            self.freeReconnect(existing_state);
+        }
+
         self.maybe_reconnect_options = try self.maybe_gateway_client.?.options.dupe(self.allocator);
     }
 
@@ -589,14 +593,12 @@ fn processReadyEvent(
 
     log.info("User received, logged in as '{s}#{s}'", .{ user.username, user.discriminator });
 
-    const session_id = try self.allocator.dupe(u8, data.session_id);
-    errdefer self.allocator.free(session_id);
-    const resume_gateway_url = try self.allocator.dupe(u8, data.resume_gateway_url);
-    errdefer self.allocator.free(resume_gateway_url);
+    var options = self.maybe_gateway_client.?.options;
+    options.host = data.resume_gateway_url;
+    options.session_id = data.session_id;
 
     self.maybe_reconnect_options = try self.maybe_gateway_client.?.options.dupe(self.allocator);
-    self.maybe_reconnect_options.?.session_id = session_id;
-    self.maybe_reconnect_options.?.host = resume_gateway_url;
+    errdefer self.clearReconnect();
 
     return .{ .arena = arena, .user = user };
 }

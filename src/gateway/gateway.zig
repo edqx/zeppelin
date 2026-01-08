@@ -272,6 +272,7 @@ pub fn Client(config: Config) type {
         }
 
         pub fn deinit(self: *ClientT) void {
+            self.websocket_client.deinit();
             switch (config.compression) {
                 .none, .zlib => {},
                 .zstd => self.allocator.free(self.decompressor_window),
