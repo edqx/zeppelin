@@ -4,6 +4,7 @@ const Example = enum {
     slash_commands,
     mentions,
     buttons,
+    voice,
 };
 
 pub fn build(b: *std.Build) void {

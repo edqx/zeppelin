@@ -50,6 +50,7 @@ pub const opcode = struct {
             return switch (self) {
                 .heartbeat => payload.Heartbeat,
                 .identify => payload.Identify,
+                .voice_state_update => payload.SendVoiceStateUpdate,
                 else => @compileError("Unsupported payload type for send opcode " ++ @tagName(self)),
             };
         }
@@ -522,6 +523,22 @@ pub const Interaction = struct {
     attachment_size_limit: i32,
 };
 
+pub const VoiceState = struct {
+    guild_id: Elective(Snowflake) = .not_given,
+    channel_id: ?Snowflake = null,
+    user_id: Snowflake,
+    member: Elective(Guild.Member) = .not_given,
+    session_id: []const u8,
+    deaf: bool,
+    mute: bool,
+    self_deaf: bool,
+    self_mute: bool,
+    self_stream: Elective(bool) = .not_given,
+    self_video: bool,
+    suppress: bool,
+    request_to_speak_timestamp: ?Iso8601Timestamp = null,
+};
+
 pub const payload = struct {
     pub const Hello = struct {
         heartbeat_interval: i32,
@@ -578,6 +595,14 @@ pub const payload = struct {
             try jw.write(self.intents);
             try jw.endObject();
         }
+    };
+    
+    pub const SendVoiceStateUpdate = struct {
+        guild_id: Snowflake,
+        // `null` if disconnecting
+        channel_id: ?Snowflake,
+        self_mute: bool,
+        self_deaf: bool,
     };
 
     pub const Ready = struct {
@@ -712,4 +737,12 @@ pub const payload = struct {
     pub const MessageUpdate = MessageCreate;
 
     pub const InteractionCreate = Interaction;
+    
+    pub const ReceiveVoiceStateUpdate = VoiceState;
+    
+    pub const VoiceServerUpdate = struct {
+        token: []const u8,
+        guild_id: Snowflake,
+        endpoint: ?[]const u8 = null,
+    };
 };

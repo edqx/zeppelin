@@ -42,6 +42,8 @@ pub const DispatchType = enum {
     message_delete,
     message_update,
     interaction_create,
+    voice_state_update,
+    voice_server_update,
 };
 
 pub const Event = union(DispatchType) {
@@ -98,6 +100,9 @@ pub const Event = union(DispatchType) {
         interaction: Interaction,
         token: []const u8,
     };
+    
+    pub const VoiceStateUpdate = void;
+    pub const VoiceServerUpdate = void;
 
     ready: Ready,
     user_update: UserUpdate,
@@ -109,6 +114,8 @@ pub const Event = union(DispatchType) {
     message_delete: MessageDelete,
     message_update: MessageUpdate,
     interaction_create: InteractionCreate,
+    voice_state_update: VoiceStateUpdate,
+    voice_server_update: VoiceServerUpdate,
 
     pub const dispatch_id_map: std.StaticStringMap(DispatchType) = .initComptime(.{
         .{ "READY", .ready },
@@ -121,6 +128,8 @@ pub const Event = union(DispatchType) {
         .{ "MESSAGE_DELETE", .message_delete },
         .{ "MESSAGE_UPDATE", .message_update },
         .{ "INTERACTION_CREATE", .interaction_create },
+        .{ "VOICE_STATE_UPDATE", .voice_state_update },
+        .{ "VOICE_SERVER_UPDATE", .voice_server_update },
     });
 
     pub fn handlerFunctionName(comptime dispatch_type: DispatchType) []const u8 {
@@ -135,6 +144,8 @@ pub const Event = union(DispatchType) {
             .message_delete => "messageDelete",
             .message_update => "messageUpdate",
             .interaction_create => "interactionCreate",
+            .voice_state_update => "voiceStateUpdate",
+            .voice_server_update => "voiceServerUpdate",
         };
     }
 
@@ -749,6 +760,32 @@ fn processInteractionCreate(
     };
 }
 
+fn processVoiceStateUpdate(
+    self: *Client,
+    arena: std.mem.Allocator,
+    data: gateway_message.payload.ReceiveVoiceStateUpdate,
+) !Event.VoiceStateUpdate {
+    log.info("voice state: {}", .{data});
+    
+    _ = self;
+    _ = arena;
+
+    return {};
+}
+
+fn processVoiceServerUpdate(
+    self: *Client,
+    arena: std.mem.Allocator,
+    data: gateway_message.payload.VoiceServerUpdate,
+) !Event.VoiceServerUpdate {
+    log.info("voice server: {}", .{data});
+    
+    _ = self;
+    _ = arena;
+
+    return {};
+}
+
 fn DispatchPayloadType(dispatch_type: DispatchType) type {
     return switch (dispatch_type) {
         .ready => gateway_message.payload.Ready,
@@ -761,6 +798,8 @@ fn DispatchPayloadType(dispatch_type: DispatchType) type {
         .message_delete => gateway_message.payload.MessageDelete,
         .message_update => gateway_message.payload.MessageUpdate,
         .interaction_create => gateway_message.payload.InteractionCreate,
+        .voice_state_update => gateway_message.payload.ReceiveVoiceStateUpdate,
+        .voice_server_update => gateway_message.payload.VoiceServerUpdate,
     };
 }
 
@@ -776,6 +815,8 @@ fn dispatchProcessFunctionName(dispatch_type: DispatchType) []const u8 {
         .message_delete => "processMessageDelete",
         .message_update => "processMessageUpdate",
         .interaction_create => "processInteractionCreate",
+        .voice_state_update => "processVoiceStateUpdate",
+        .voice_server_update => "processVoiceServerUpdate",
     };
 }
 
@@ -1394,4 +1435,35 @@ pub fn createInteractionResponseMessage(
     defer writer.deinit();
     try writer.write(message_builder);
     try writer.create();
+}
+
+pub fn connectToVoice(self: *Client, guild_id: Snowflake, channel_id: Snowflake) !void {
+    const gateway_client = &(self.maybe_gateway_client orelse return error.NotConnectedToGateway);
+
+    var guild_id_string_buffer: [Snowflake.max_size]u8 = undefined;
+    const guild_id_string = guild_id.formatBuffer(&guild_id_string_buffer);
+    
+    var channel_id_string_buffer: [Snowflake.max_size]u8 = undefined;
+    const channel_id_string = channel_id.formatBuffer(&channel_id_string_buffer);
+
+    try gateway_client.sendVoiceStateUpdate(.{
+        .guild_id = guild_id_string,
+        .channel_id = channel_id_string,
+        .self_mute = false,
+        .self_deaf = false,
+    });
+}
+
+pub fn disconnectFromVoice(self: *Client, guild_id: Snowflake) !void {
+    const gateway_client = &(self.maybe_gateway_client orelse return error.NotConnectedToGateway);
+
+    var guild_id_string_buffer: [Snowflake.max_size]u8 = undefined;
+    const guild_id_string = guild_id.formatBuffer(&guild_id_string_buffer);
+    
+    try gateway_client.sendVoiceStateUpdate(.{
+        .guild_id = guild_id_string,
+        .channel_id = null,
+        .self_mute = false,
+        .self_deaf = false,
+    });
 }

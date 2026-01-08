@@ -308,7 +308,7 @@ pub fn Client(config: Config) type {
                         self.heartbeat_thread = try std.Thread.spawn(.{}, heartbeatInterval, .{self});
                         self.state = .received_hello;
 
-                        try self.sendIdentify(allocator);
+                        try self.sendIdentify();
                         break;
                     },
                     .close => return error.UnexpectedClose,
@@ -360,7 +360,7 @@ pub fn Client(config: Config) type {
                                 } };
                             },
                             .heartbeat => {
-                                try self.sendHeartbeat(arena);
+                                try self.sendHeartbeat();
                             },
                             .reconnect => {
                                 return .reconnect;
@@ -413,29 +413,32 @@ pub fn Client(config: Config) type {
 
         fn sendEvent(
             self: *ClientT,
-            allocator: std.mem.Allocator,
             comptime opcode: gateway_message.opcode.Send,
             payload: opcode.Payload(),
         ) !void {
+            const temp_allocator = self.allocator;
+        
             const send_event: gateway_message.Send(opcode.Payload()) = .{
                 .op = @intFromEnum(opcode),
                 .d = payload,
             };
 
-            const data = try std.json.Stringify.valueAlloc(allocator, send_event, .{});
-            defer allocator.free(data);
+            // TODO: re-use buffers to avoid allocating every event. luckily sending on the gateway is not very
+            // common
+            const data = try std.json.Stringify.valueAlloc(temp_allocator, send_event, .{});
+            defer temp_allocator.free(data);
 
             try self.websocket_client.write(data);
         }
 
-        fn sendIdentify(self: *ClientT, allocator: std.mem.Allocator) !void {
+        fn sendIdentify(self: *ClientT) !void {
             const token = self.token_ephemeral orelse {
                 log.err("Expected token to be available for identify", .{});
                 return;
             };
             self.token_ephemeral = null;
 
-            try self.sendEvent(allocator, .identify, .{
+            try self.sendEvent(.identify, .{
                 .token = token,
                 .properties = .{
                     .os = @tagName(builtin.os.tag),
@@ -446,8 +449,12 @@ pub fn Client(config: Config) type {
             });
         }
 
-        fn sendHeartbeat(self: *ClientT, allocator: std.mem.Allocator) !void {
-            try self.sendEvent(allocator, .heartbeat, self.sequence_number);
+        fn sendHeartbeat(self: *ClientT) !void {
+            try self.sendEvent(.heartbeat, self.sequence_number);
+        }
+        
+        pub fn sendVoiceStateUpdate(self: *ClientT, update: gateway_message.payload.SendVoiceStateUpdate) !void {
+            try self.sendEvent(.voice_state_update, update);
         }
 
         fn heartbeatInterval(self: *ClientT) !void {
@@ -465,16 +472,13 @@ pub fn Client(config: Config) type {
                     switch (e) {
                         error.Timeout => {
                             if (!self.state.alive()) continue;
-                            var arena: std.heap.ArenaAllocator = .init(self.allocator);
-                            defer arena.deinit();
-
                             if (!self.was_last_heartbeat_acknowledged) {
                                 try self.websocket_client.close(.{});
                                 break;
                             }
 
                             self.was_last_heartbeat_acknowledged = false;
-                            try self.sendHeartbeat(arena.allocator());
+                            try self.sendHeartbeat();
                         },
                         else => return e,
                     }
