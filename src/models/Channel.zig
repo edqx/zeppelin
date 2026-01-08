@@ -1,22 +1,23 @@
 const std = @import("std");
 
-const Snowflake = @import("../snowflake.zig").Snowflake;
-const QueriedFields = @import("../queryable.zig").QueriedFields;
 const Client = @import("../Client.zig");
 
-const MessageBuilder = @import("../MessageBuilder.zig");
+const MessageBuilder = @import("../message/MessageBuilder.zig");
 const Mention = MessageBuilder.Mention;
-const Permissions = @import("../permissions.zig").Permissions;
-
-const gateway_message = @import("../gateway_message.zig");
 
 const Guild = @import("Guild.zig");
 const Message = @import("Message.zig");
 const User = @import("User.zig");
 
-pub const Data = @import("../gateway_message.zig").Channel;
+const Snowflake = @import("snowflake.zig").Snowflake;
+const QueriedFields = @import("queryable.zig").QueriedFields;
+const Permissions = @import("permissions.zig").Permissions;
+
+const gateway_message = @import("../gateway/gateway_message.zig");
 
 const Channel = @This();
+
+pub const Data = gateway_message.Channel;
 
 pub const Type = enum(i32) {
     const trait_map = .{

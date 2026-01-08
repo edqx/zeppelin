@@ -1,14 +1,14 @@
 const std = @import("std");
 
-const Snowflake = @import("../snowflake.zig").Snowflake;
-const QueriedFields = @import("../queryable.zig").QueriedFields;
 const Client = @import("../Client.zig");
 
-const Mention = @import("../MessageBuilder.zig").Mention;
+const Mention = @import("../message/MessageBuilder.zig").Mention;
 
 const Channel = @import("Channel.zig");
+const Snowflake = @import("snowflake.zig").Snowflake;
+const QueriedFields = @import("queryable.zig").QueriedFields;
 
-pub const Data = @import("../gateway_message.zig").User;
+pub const Data = @import("../gateway/gateway_message.zig").User;
 
 const User = @This();
 

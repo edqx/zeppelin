@@ -1,17 +1,17 @@
 const std = @import("std");
 
-const Snowflake = @import("../snowflake.zig").Snowflake;
-const QueriedFields = @import("../queryable.zig").QueriedFields;
 const Client = @import("../Client.zig");
 
-const Pool = @import("../cache.zig").Pool;
+const Pool = @import("cache.zig").Pool;
 
-const Mention = @import("../MessageBuilder.zig").Mention;
-const Permissions = @import("../permissions.zig").Permissions;
+const Mention = @import("../message/MessageBuilder.zig").Mention;
 
 const Guild = @import("Guild.zig");
+const Snowflake = @import("snowflake.zig").Snowflake;
+const QueriedFields = @import("queryable.zig").QueriedFields;
+const Permissions = @import("permissions.zig").Permissions;
 
-pub const Data = @import("../gateway_message.zig").Role;
+pub const Data = @import("../gateway/gateway_message.zig").Role;
 
 const Role = @This();
 

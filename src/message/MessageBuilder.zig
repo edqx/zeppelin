@@ -1,10 +1,9 @@
 const std = @import("std");
 const datetime = @import("datetime").datetime;
 
-const Snowflake = @import("snowflake.zig").Snowflake;
-
-const Message = @import("structures/Message.zig");
-const Interaction = @import("structures/ephemeral/Interaction.zig");
+const Snowflake = @import("../models/snowflake.zig").Snowflake;
+const Message = @import("../models/Message.zig");
+const Interaction = @import("../models/ephemeral/Interaction.zig");
 const Color = Message.Color;
 
 const MessageBuilder = @This();

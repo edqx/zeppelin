@@ -3,19 +3,20 @@ const builtin = @import("builtin");
 
 const Datetime = @import("datetime").datetime.Datetime;
 
-const Snowflake = @import("../snowflake.zig").Snowflake;
-const QueriedFields = @import("../queryable.zig").QueriedFields;
 const Client = @import("../Client.zig");
+
+const MessageBuilder = @import("../message/MessageBuilder.zig");
 
 const ReactionAdd = Client.ReactionAdd;
 
 const Channel = @import("Channel.zig");
 const Guild = @import("Guild.zig");
 const User = @import("User.zig");
+const Snowflake = @import("snowflake.zig").Snowflake;
+const QueriedFields = @import("queryable.zig").QueriedFields;
 
-const gateway_message = @import("../gateway_message.zig");
+const gateway_message = @import("../gateway/gateway_message.zig");
 
-const MessageBuilder = @import("../MessageBuilder.zig");
 
 pub const Data = struct {
     base: gateway_message.Message,

@@ -1,42 +1,11 @@
 const std = @import("std");
 const wardrobe = @import("wardrobe");
 
-const log = @import("log.zig").zeppelin;
+const log = @import("../log.zig").zeppelin;
 
-const Authentication = @import("authentication.zig").Authentication;
+const Authentication = @import("../authentication.zig").Authentication;
 
 const Rest = @This();
-
-pub fn MultiWriter(comptime Writers: type) type {
-    comptime var ErrSet = error{};
-    inline for (@typeInfo(Writers).@"struct".fields) |field| {
-        const StreamType = field.type;
-        ErrSet = ErrSet || StreamType.Error;
-    }
-
-    return struct {
-        const Self = @This();
-
-        streams: Writers,
-
-        pub const Error = ErrSet;
-        pub const Writer = std.io.Writer(Self, Error, write);
-
-        pub fn writer(self: Self) Writer {
-            return .{ .context = self };
-        }
-
-        pub fn write(self: Self, bytes: []const u8) Error!usize {
-            inline for (self.streams) |stream|
-                try stream.writeAll(bytes);
-            return bytes.len;
-        }
-    };
-}
-
-pub fn multiWriter(streams: anytype) MultiWriter(@TypeOf(streams)) {
-    return .{ .streams = streams };
-}
 
 pub const Request = struct {
     arena: std.heap.ArenaAllocator,

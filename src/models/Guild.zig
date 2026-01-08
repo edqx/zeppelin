@@ -1,19 +1,19 @@
 const std = @import("std");
 
-const Snowflake = @import("../snowflake.zig").Snowflake;
-const QueriedFields = @import("../queryable.zig").QueriedFields;
 const Client = @import("../Client.zig");
 
-const Permissions = @import("../permissions.zig").Permissions;
-
-const Cache = @import("../cache.zig").Cache;
-const Pool = @import("../cache.zig").Pool;
+const Cache = @import("cache.zig").Cache;
+const Pool = @import("cache.zig").Pool;
 
 const Channel = @import("Channel.zig");
 const Role = @import("Role.zig");
 const User = @import("User.zig");
 
-const gateway_message = @import("../gateway_message.zig");
+const Snowflake = @import("snowflake.zig").Snowflake;
+const QueriedFields = @import("queryable.zig").QueriedFields;
+const Permissions = @import("permissions.zig").Permissions;
+
+const gateway_message = @import("../gateway/gateway_message.zig");
 
 pub const Data = union(enum) {
     unavailable: gateway_message.Guild.Unavailable,

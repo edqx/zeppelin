@@ -4,28 +4,28 @@ const wardrobe = @import("wardrobe");
 
 const log = @import("log.zig").zeppelin;
 
-const gateway = @import("gateway.zig");
-const gateway_message = @import("gateway_message.zig");
-const endpoints = @import("constants.zig").endpoints;
+const gateway = @import("gateway/gateway.zig");
+const gateway_message = @import("gateway/gateway_message.zig");
+const endpoints = @import("http/endpoints.zig");
 
-const Snowflake = @import("snowflake.zig").Snowflake;
 
 const Authentication = @import("authentication.zig").Authentication;
 
-const Cache = @import("cache.zig").Cache;
-const Pool = @import("cache.zig").Pool;
+const MessageBuilder = @import("message/MessageBuilder.zig");
+const ApplicationCommandBuilder = @import("application/ApplicationCommandBuilder.zig");
 
-const MessageBuilder = @import("MessageBuilder.zig");
-const ApplicationCommandBuilder = @import("ApplicationCommandBuilder.zig");
+const Rest = @import("http/Rest.zig");
 
-const Rest = @import("Rest.zig");
+const Snowflake = @import("models/snowflake.zig").Snowflake;
+const Cache = @import("models/cache.zig").Cache;
+const Pool = @import("models/cache.zig").Pool;
 
-const Channel = @import("structures/Channel.zig");
-const Guild = @import("structures/Guild.zig");
-const Interaction = @import("structures/ephemeral/Interaction.zig");
-const Message = @import("structures/Message.zig");
-const Role = @import("structures/Role.zig");
-const User = @import("structures/User.zig");
+const Channel = @import("models/Channel.zig");
+const Guild = @import("models/Guild.zig");
+const Interaction = @import("models/ephemeral/Interaction.zig");
+const Message = @import("models/Message.zig");
+const Role = @import("models/Role.zig");
+const User = @import("models/User.zig");
 
 const StandardGatewayClient = gateway.Client(.{ .compression = .none });
 

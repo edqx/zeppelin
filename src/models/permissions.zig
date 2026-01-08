@@ -2,7 +2,7 @@ const std = @import("std");
 
 const Snowflake = @import("snowflake.zig").Snowflake;
 
-const gateway_message = @import("gateway_message.zig");
+const gateway_message = @import("../gateway/gateway_message.zig");
 
 pub const Permissions = packed struct(Permissions.Int) {
     pub const Int = i64;

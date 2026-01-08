@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const Elective = @import("gateway_message.zig").Elective;
+const Elective = @import("../gateway/gateway_message.zig").Elective;
 
 pub fn QueriedFields(comptime Structure: type, comptime fields: []const [:0]const u8) type {
     var queried_fields: []const std.builtin.Type.StructField = &.{};

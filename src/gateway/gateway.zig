@@ -2,7 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const websocket = @import("websocket");
 
-const log = @import("log.zig").zeppelin;
+const log = @import("../log.zig").zeppelin;
 
 const gateway_message = @import("gateway_message.zig");
 

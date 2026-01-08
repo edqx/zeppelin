@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const Channel = @import("structures/Channel.zig");
+const Channel = @import("../models/Channel.zig");
 
 const ApplicationCommandBuilder = @This();
 
